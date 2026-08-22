@@ -30,3 +30,9 @@
 | Store only hashes of reusable session tokens and encrypted recoverable MFA secrets. | A database leak should not expose immediately reusable tokens; TOTP secrets require encryption rather than password hashing. |
 | Separate runtime, migration, backup, and administrative database privileges. | The application account can remain least-privileged and must not be a PostgreSQL superuser or schema owner. |
 | Keep FastAPI authorization authoritative; consider PostgreSQL RLS only as defense in depth. | Central policy remains consistent across workflows while database controls can later reduce impact without becoming the sole security boundary. |
+| Use a new ChatGPT chat for each substantial project phase. | Keeps conversation history manageable while the documented handover package preserves continuity. |
+| Require a completion summary, updated current-status handover, and next-phase opening prompt at every phase boundary. | Makes phase transitions repeatable without requiring the user to restate the workflow. |
+| Use the local repository and verified GitHub `main` checkpoints as the primary project record. | Git provides synchronized version history; living documents preserve design and handover context. |
+| Do not create a full project ZIP for routine phase handover. | ZIPs duplicate Git checkpoints and are reserved for a specific backup, transfer, recovery, direct-access, major-release, or user-requested need. |
+| Allow Codex to perform routine phase-end Git/GitHub checkpoint work when authorized. | Saves interactive time while requiring Codex to stop on failed checks, unexpected changes, secrets, conflicts, remote divergence, authentication failures, or rejected pushes. |
+| Require explicit approval for force pushes, hard resets, destructive history rewriting, or conflict resolution that could discard work. | Prevents routine automation from damaging recoverable project history or user work. |

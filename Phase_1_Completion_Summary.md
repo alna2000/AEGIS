@@ -70,5 +70,9 @@ records, frontend, bot protection, audit persistence, or deployment.
 
 ## Ready for
 
-Phase 1 is complete and ready for a user-managed Git/GitHub checkpoint, followed
-by **Phase 2 - Authentication & 2FA**. Phase 2 has not started.
+Phase 1 was committed and pushed successfully at commit `26f4375` (`Complete
+AEGIS Phase 1 foundation and architecture`). At that checkpoint, `main` was clean
+and up to date with `origin/main`.
+
+The required `AEGIS_Phase2_Opening_Prompt.md` now provides the handoff to
+**Phase 2 - Authentication & 2FA**. Phase 2 has not started.

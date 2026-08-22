@@ -29,3 +29,94 @@ Phase 1 is complete: Part 1 established the verified minimal FastAPI foundation,
 Part 2 designed the security architecture, and Part 3 designed the database
 architecture. Architecture-only controls are not implemented. Phase 2 -
 Authentication & 2FA is the next planned phase and has not started.
+
+## Phase Completion and Handover Protocol
+
+AEGIS is developed in phases. The normal project rule requires each substantial
+phase to start in a new ChatGPT chat so that conversation history remains
+manageable. The user should not need to restate this protocol at later phase
+boundaries.
+
+At the end of every phase, complete this workflow before starting the next one:
+
+1. Complete the phase implementation.
+2. Run the appropriate automated tests and security/quality checks.
+3. Review the completed scope and confirm that the next phase was not started
+   accidentally.
+4. Update `AEGIS_Current_Status_and_Handover.md`.
+5. Update architecture, decision, and project-plan documents where necessary.
+6. Create `Phase_X_Completion_Summary.md` for the completed phase.
+7. Create `AEGIS_PhaseX_Opening_Prompt.md` for the phase being started next.
+8. Perform a meaningful Git/GitHub checkpoint.
+9. Confirm that the repository is clean and synchronized.
+10. Start the next phase in a new ChatGPT chat.
+
+The next-phase opening prompt is mandatory. It must identify what AEGIS is and
+that all data is synthetic; the completed and newly starting phases; implemented
+versus architecture-only work; inherited security decisions; latest tests,
+warnings, Git checkpoint, and deployment state; the new phase's scope and
+explicit exclusions; the Codex working method; verification and Git/GitHub
+policies; authoritative documents; and what the new chat must do first. The new
+chat must review the supplied project and handover documents before asking Codex
+to implement the next phase.
+
+The recommended minimum new-chat handover package is:
+
+```text
+AEGIS_PhaseX_Opening_Prompt.md
+AEGIS_Current_Status_and_Handover.md
+AEGIS_Project_Plan.md
+Phase_Previous_Completion_Summary.md
+```
+
+Include `AEGIS_Architecture_and_Security_Design.md` and
+`AEGIS_Decision_Log.md` when relevant. They should normally be included and
+reviewed for security-sensitive phases such as authentication, authorization,
+database implementation, deployment, and AI/RAG.
+
+### Git/GitHub phase checkpoint
+
+Git/GitHub is the normal source-code checkpoint and version history. At a
+meaningful phase completion, when authorized, Codex may save interactive time by
+running tests and `git diff --check`, reviewing status and intended changes,
+checking for secrets and local artifacts, staging the phase changes, committing
+with an appropriate checkpoint message, pushing to `origin/main`, and verifying
+the final status and latest commit.
+
+Codex must stop and report failing tests, unexpected files, possible credentials
+or secrets, merge conflicts, unexpected remote commits, authentication failures,
+or a rejected push. `git push --force`, `git reset --hard`, destructive history
+rewriting, and automatic conflict resolution that could discard work always
+require explicit approval.
+
+### ZIP policy
+
+A full project ZIP is not required at every phase boundary and must not routinely
+duplicate Git checkpoints. Create one only for a specific reason, such as an
+offline/archive backup, a risky architectural change, GitHub being unavailable,
+moving between machines, a new chat needing direct access to the full tree, a
+major release such as AEGIS v1.0, or an explicit user request.
+
+```text
+New chat every phase:          YES
+Updated handover every phase:  YES
+Completion summary:            YES
+Next-phase opening prompt:      YES
+Git/GitHub checkpoint:          YES
+Full ZIP every phase:           NO, unless useful
+```
+
+### Project source of truth
+
+Use this hierarchy for normal project continuity:
+
+1. Current local AEGIS repository.
+2. GitHub `main` at verified checkpoints.
+3. `AEGIS_Current_Status_and_Handover.md`.
+4. `AEGIS_Architecture_and_Security_Design.md`.
+5. `AEGIS_Decision_Log.md`.
+6. `AEGIS_Project_Plan.md`.
+7. Latest `Phase_X_Completion_Summary.md`.
+8. Next-phase opening prompt.
+
+A ZIP is not the primary source of truth.

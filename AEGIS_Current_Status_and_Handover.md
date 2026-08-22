@@ -37,7 +37,7 @@ mean that the planned security controls are operational.
 Latest verification with Python 3.13.15:
 
 ```text
-pytest: 2 passed, 2 warnings in 0.58s
+pytest: 2 passed, 2 warnings in 0.53s
 GET /: {"name":"AEGIS","status":"Development","api":"Available"}
 GET /health: {"status":"ok"}
 git diff --check: exit 0, no whitespace errors; LF-to-CRLF notices emitted
@@ -96,18 +96,56 @@ protection, audit persistence, and deployment remain unimplemented.
   Dependencies were intentionally not changed during this review.
 - Non-blocking `PytestCacheWarning`: pytest could not write its `.pytest_cache`
   node-ID cache because this environment denied access to that path.
+- The system `python` does not have pytest installed, and PowerShell policy blocks
+  `.venv\Scripts\Activate.ps1`. Direct invocation with
+  `.venv\Scripts\python.exe -m pytest` succeeds; no dependency or policy change
+  was made during this documentation update.
 - No Phase 2 or later control is implemented. This is expected, not a verification
   failure.
 
 ## Git and deployment checkpoint
 
-A Git repository exists but has no commit. Foundation files are staged from the
-planned initial checkpoint, while the later Phase 1 documentation updates and new
-completion summary have unstaged working-tree changes. No commit or push was made.
-The user will review and manage the Git/GitHub checkpoint.
+Phase 1 was committed and pushed successfully:
+
+```text
+Branch: main
+Remote: origin
+GitHub: https://github.com/alna2000/AEGIS.git
+Phase 1 commit: 26f4375 (Complete AEGIS Phase 1 foundation and architecture)
+Working tree at checkpoint: clean
+Synchronization at checkpoint: main up to date with origin/main
+```
+
+The documentation-only phase-transition protocol update made after that
+checkpoint is intentionally not committed or pushed yet.
 
 Deployment status is **local development only**. PostgreSQL and all production or
 public deployment infrastructure remain unconfigured.
+
+## Permanent phase completion and handover rule
+
+AEGIS uses the mandatory phase-boundary workflow documented in
+`AEGIS_Project_Plan.md`. Each substantial phase must use a new ChatGPT chat under
+the normal project rule. Every completed phase requires updated handover documentation, an updated
+completion summary, a mandatory opening prompt for the next phase, appropriate
+verification, and a meaningful Git/GitHub checkpoint. A full project ZIP is
+optional and is not a routine handover requirement.
+
+For Phase 2, the minimum new-chat package is:
+
+```text
+AEGIS_Phase2_Opening_Prompt.md
+AEGIS_Current_Status_and_Handover.md
+AEGIS_Project_Plan.md
+Phase_1_Completion_Summary.md
+AEGIS_Architecture_and_Security_Design.md
+AEGIS_Decision_Log.md
+```
+
+The architecture and decision documents are included because authentication is
+security-sensitive. Normal continuity follows the source-of-truth hierarchy in
+the project plan, not a ZIP archive. The Phase 2 chat must review these documents
+before asking Codex to implement anything.
 
 ## Phase 2 handoff
 
