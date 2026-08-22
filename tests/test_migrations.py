@@ -7,7 +7,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect
 
 
-def test_authentication_migration_upgrades_and_downgrades(tmp_path: Path) -> None:
+def test_authentication_migrations_upgrade_and_downgrade(tmp_path: Path) -> None:
     database_path = tmp_path / "migration-test.sqlite3"
     database_url = f"sqlite+pysqlite:///{database_path.as_posix()}"
     config = Config("alembic.ini")
@@ -46,6 +46,46 @@ def test_authentication_migration_upgrades_and_downgrades(tmp_path: Path) -> Non
         "ck_users_username_canonical",
         "ck_users_username_length",
     } <= check_names
+    assert "sessions" in inspector.get_table_names()
+    assert {column["name"] for column in inspector.get_columns("sessions")} == {
+        "id",
+        "user_id",
+        "token_hash",
+        "created_at",
+        "expires_at",
+        "last_seen_at",
+        "revoked_at",
+        "source_ip",
+        "user_agent",
+    }
+    session_unique_columns = {
+        tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("sessions")
+    }
+    assert ("token_hash",) in session_unique_columns
+    session_checks = {
+        constraint["name"] for constraint in inspector.get_check_constraints("sessions")
+    }
+    assert {
+        "ck_sessions_expiry_after_creation",
+        "ck_sessions_last_seen_after_creation",
+        "ck_sessions_revoked_after_creation",
+        "ck_sessions_token_hash_format",
+    } <= session_checks
+    session_foreign_keys = inspector.get_foreign_keys("sessions")
+    assert len(session_foreign_keys) == 1
+    assert session_foreign_keys[0]["referred_table"] == "users"
+    assert session_foreign_keys[0]["constrained_columns"] == ["user_id"]
+    session_indexes = {
+        index["name"]: tuple(index["column_names"])
+        for index in inspector.get_indexes("sessions")
+    }
+    assert session_indexes["ix_sessions_expires_at"] == ("expires_at",)
+    assert session_indexes["ix_sessions_user_lifecycle"] == (
+        "user_id",
+        "revoked_at",
+        "expires_at",
+    )
     engine.dispose()
 
     command.downgrade(config, "base")

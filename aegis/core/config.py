@@ -1,7 +1,9 @@
 """Application configuration loaded from environment variables."""
 
 from functools import lru_cache
+from typing import Self
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +14,12 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = True
     database_url: str = "postgresql+psycopg://aegis_app@localhost:5432/aegis"
+    session_lifetime_seconds: int = Field(default=8 * 60 * 60, ge=300, le=24 * 60 * 60)
+    session_cookie_name: str = Field(
+        default="aegis_session",
+        pattern=r"^[A-Za-z0-9_-]{1,64}$",
+    )
+    session_cookie_secure: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -19,6 +27,15 @@ class Settings(BaseSettings):
         env_prefix="AEGIS_",
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def _require_secure_cookie_outside_local_environments(self) -> Self:
+        environment = self.environment.strip().lower()
+        if environment not in {"development", "test"} and not self.session_cookie_secure:
+            raise ValueError(
+                "secure session cookies are required outside development and test"
+            )
+        return self
 
 
 @lru_cache

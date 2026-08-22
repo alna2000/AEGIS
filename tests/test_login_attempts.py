@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from aegis.db.models import User
 from aegis.db.repositories import UserRepository
+from aegis.security.audit_sinks import LoggingAuthenticationAuditSink
 from aegis.security.authentication_events import (
     MAX_USER_AGENT_CHARACTERS,
     AuthenticationAuditError,
@@ -112,7 +113,7 @@ def test_success_returns_identity_only_and_emits_exact_success_event(
     assert result.principal.username == "synthetic.operator"
     assert sink.events == [
         AuthenticationAuditEvent(
-            event_type=AuthenticationEventType.LOGIN_SUCCESS,
+            event_type=AuthenticationEventType.PASSWORD_AUTH_SUCCESS,
             outcome=AuthenticationOutcome.SUCCESS,
             reason_code=None,
             request_id=context.request_id,
@@ -195,7 +196,10 @@ def test_dummy_verifier_can_never_authenticate_nonexistent_account(
     )
 
     assert result == LoginAttemptResult.failure()
-    assert sink.events[0].event_type is AuthenticationEventType.LOGIN_FAILURE
+    assert (
+        sink.events[0].event_type
+        is AuthenticationEventType.PASSWORD_AUTH_FAILURE
+    )
 
 
 def test_all_credential_rejections_have_same_service_result(
@@ -222,7 +226,7 @@ def test_all_credential_rejections_have_same_service_result(
 
     assert results == [LoginAttemptResult.failure()] * 4
     assert [event.event_type for event in sink.events] == [
-        AuthenticationEventType.LOGIN_FAILURE
+        AuthenticationEventType.PASSWORD_AUTH_FAILURE
     ] * 4
     assert sink.events[-1].reason_code is AuthenticationReasonCode.IDENTIFIER_REJECTED
     assert sink.events[-1].username is None
@@ -245,7 +249,38 @@ def test_failure_events_are_controlled_and_contain_no_credentials(
     assert WRONG_PASSWORD not in event_values
     assert SYNTHETIC_PASSWORD not in event_values
     assert stored_hash not in event_values
+    assert (
+        sink.events[0].event_type
+        is AuthenticationEventType.PASSWORD_AUTH_FAILURE
+    )
     assert sink.events[0].reason_code is AuthenticationReasonCode.CREDENTIALS_REJECTED
+
+
+def test_logging_sink_never_receives_credentials_or_session_tokens(
+    db_session: Session,
+) -> None:
+    users, service, sink = build_service(db_session)
+    stored_hash = PasswordService().hash(SYNTHETIC_PASSWORD)
+    persist_user(users, stored_hash)
+    context = make_context()
+
+    result = service.attempt_login(
+        "synthetic.operator",
+        SYNTHETIC_PASSWORD,
+        context,
+    )
+    assert result.status is LoginAttemptStatus.SUCCESS
+    assert len(sink.events) == 1
+
+    logger = Mock()
+    LoggingAuthenticationAuditSink(logger).record(sink.events[0])
+    rendered_log_call = repr(logger.info.call_args)
+    synthetic_raw_token = "T" * 43
+
+    assert "PASSWORD_AUTH_SUCCESS" in rendered_log_call
+    assert SYNTHETIC_PASSWORD not in rendered_log_call
+    assert stored_hash not in rendered_log_call
+    assert synthetic_raw_token not in rendered_log_call
 
 
 def test_malformed_stored_verifier_fails_closed_and_is_audited(
@@ -259,7 +294,7 @@ def test_malformed_stored_verifier_fails_closed_and_is_audited(
     )
 
     assert result == LoginAttemptResult.failure()
-    assert sink.events[0].event_type is AuthenticationEventType.LOGIN_FAILURE
+    assert sink.events[0].event_type is AuthenticationEventType.PASSWORD_AUTH_FAILURE
 
 
 def test_context_normalizes_and_bounds_optional_metadata() -> None:
@@ -300,7 +335,7 @@ def test_missing_or_malformed_optional_metadata_does_not_control_success(
     assert rejected == LoginAttemptResult.failure()
     assert sink.events[0].source_ip is None
     assert sink.events[0].user_agent is None
-    assert sink.events[1].event_type is AuthenticationEventType.LOGIN_FAILURE
+    assert sink.events[1].event_type is AuthenticationEventType.PASSWORD_AUTH_FAILURE
 
 
 def test_audit_failure_prevents_success_and_leaves_rehash_unchanged(
@@ -357,6 +392,6 @@ def test_successful_audited_login_upgrades_outdated_hash(
     )
 
     assert result.status is LoginAttemptStatus.SUCCESS
-    assert sink.events[0].event_type is AuthenticationEventType.LOGIN_SUCCESS
+    assert sink.events[0].event_type is AuthenticationEventType.PASSWORD_AUTH_SUCCESS
     assert user.password_hash != original_hash
     assert PasswordService().verify(SYNTHETIC_PASSWORD, user.password_hash) is True

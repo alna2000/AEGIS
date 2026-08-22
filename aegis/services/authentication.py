@@ -93,12 +93,12 @@ class AuthenticationService:
                 if self._is_malformed_identifier(username)
                 else AuthenticationReasonCode.CREDENTIALS_REJECTED
             )
-            self._record_failure(context=context, reason_code=reason)
+            self._record_credential_failure(context=context, reason_code=reason)
             return LoginAttemptResult.failure()
 
         if not user.is_usable_for_authentication:
             self._perform_dummy_verification(password)
-            self._record_failure(
+            self._record_credential_failure(
                 context=context,
                 reason_code=AuthenticationReasonCode.ACCOUNT_UNUSABLE,
                 user_id=user.id,
@@ -108,7 +108,7 @@ class AuthenticationService:
 
         verification = self._passwords.verify_and_update(password, user.password_hash)
         if not verification.valid:
-            self._record_failure(
+            self._record_credential_failure(
                 context=context,
                 reason_code=AuthenticationReasonCode.CREDENTIALS_REJECTED,
                 user_id=user.id,
@@ -121,7 +121,7 @@ class AuthenticationService:
             username=user.username,
             display_name=user.display_name,
         )
-        self._record_success(context=context, principal=principal)
+        self._record_credential_success(context=context, principal=principal)
 
         if verification.replacement_hash is not None:
             user.password_hash = verification.replacement_hash
@@ -134,7 +134,7 @@ class AuthenticationService:
         # runtime behavior are not claimed to be mathematically constant-time.
         self._passwords.verify(password, _DUMMY_PASSWORD_HASH)
 
-    def _record_success(
+    def _record_credential_success(
         self,
         *,
         context: AuthenticationRequestContext,
@@ -142,7 +142,7 @@ class AuthenticationService:
     ) -> None:
         self._record(
             AuthenticationAuditEvent(
-                event_type=AuthenticationEventType.LOGIN_SUCCESS,
+                event_type=AuthenticationEventType.PASSWORD_AUTH_SUCCESS,
                 outcome=AuthenticationOutcome.SUCCESS,
                 reason_code=None,
                 request_id=context.request_id,
@@ -153,7 +153,7 @@ class AuthenticationService:
             )
         )
 
-    def _record_failure(
+    def _record_credential_failure(
         self,
         *,
         context: AuthenticationRequestContext,
@@ -163,7 +163,7 @@ class AuthenticationService:
     ) -> None:
         self._record(
             AuthenticationAuditEvent(
-                event_type=AuthenticationEventType.LOGIN_FAILURE,
+                event_type=AuthenticationEventType.PASSWORD_AUTH_FAILURE,
                 outcome=AuthenticationOutcome.FAILURE,
                 reason_code=reason_code,
                 request_id=context.request_id,
@@ -179,7 +179,7 @@ class AuthenticationService:
             self._audit_sink.record(event)
         except Exception as exc:
             raise AuthenticationAuditError(
-                "required authentication audit emission failed"
+                "required credential audit emission failed"
             ) from exc
 
     @staticmethod

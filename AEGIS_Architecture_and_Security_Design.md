@@ -531,8 +531,9 @@ trigger reviewed for correctness.
 A session is usable only when its account is active, it has not expired, and
 `revoked_at` is null. Disabling a user must revoke active sessions in the same
 authorized workflow. Raw reusable tokens are shown once to the client and are not
-stored. Token generation, hashing, cookie handling, rotation, and expiration are
-deferred to Phase 2.
+stored. Phase 2 Part 3 implements token generation, hashing, cookie handling,
+replacement, expiration, and revocation as detailed in its implementation status
+below.
 
 #### `mfa_credentials`
 
@@ -562,8 +563,8 @@ must remain outside the database and repository.
 | `metadata` | Optional allowlisted structured metadata; never an unrestricted dump. |
 | `created_at` | Required immutable event timestamp. |
 
-Planned event types include `LOGIN_SUCCESS`, `LOGIN_FAILURE`, `MFA_SUCCESS`,
-`MFA_FAILURE`, `ACCESS_ALLOWED`, `ACCESS_DENIED`, `ROLE_CHANGED`,
+Planned event types include `PASSWORD_AUTH_SUCCESS`, `PASSWORD_AUTH_FAILURE`,
+`MFA_SUCCESS`, `MFA_FAILURE`, `ACCESS_ALLOWED`, `ACCESS_DENIED`, `ROLE_CHANGED`,
 `CLEARANCE_CHANGED`, `COMPARTMENT_CHANGED`, `ACCOUNT_DISABLED`, `ADMIN_ACTION`,
 and `BOT_SUSPECTED`. The exact controlled vocabulary will be defined with the
 owning feature.
@@ -824,23 +825,91 @@ login attempt, without exposing HTTP behavior or creating a session:
 - Dummy work mitigates the dominant password-processing cost signal but is not a
   mathematical constant-time guarantee for database, network, interpreter, or
   operating-system behavior.
-- `LOGIN_SUCCESS` and `LOGIN_FAILURE` events use controlled event, outcome, and
-  internal reason enums plus allowlisted fields. No arbitrary metadata container
-  or credential field exists in the event model.
+- `PASSWORD_AUTH_SUCCESS` and `PASSWORD_AUTH_FAILURE` events describe password
+  credential verification only. They use controlled event, outcome, and internal
+  reason enums plus allowlisted fields. No arbitrary metadata container or
+  credential field exists in the event model.
 - Authentication context requires a UUID correlation ID. Optional IP addresses
   are parsed and canonicalized, invalid IPs are discarded, and user agents are
   stripped, rejected when they contain control characters, and limited to 256
   characters. These values are audit context only, never identity or policy.
 
-Authentication audit emission is required. An unexpected sink failure raises a
-controlled `AuthenticationAuditError`; the service returns neither success nor
-an ordinary failure result. For a valid outdated password verifier, the success
-event is emitted before the replacement verifier is assigned and flushed. An
-audit failure therefore leaves the stored verifier unchanged. Repository helpers
+Credential-verification audit emission is required. An unexpected sink failure
+raises a controlled `AuthenticationAuditError`; the service returns neither
+success nor an ordinary failure result. For a valid outdated password verifier,
+the credential-success event is emitted before the replacement verifier is
+assigned and flushed. An audit failure therefore leaves the stored verifier unchanged. Repository helpers
 still do not commit: transaction ownership and later coordination with persistent
 audit/session storage remain with the calling workflow.
 
 Persistent `audit_events`, retry/queue behavior, retention, querying, integrity
-monitoring, SIEM export, and audit authorization remain deferred. The future Part
-3 HTTP/session workflow must preserve the generic result semantics, required
+monitoring, SIEM export, and audit authorization remain deferred. The Part 3
+HTTP/session workflow below preserves the generic result semantics, required
 audit behavior, and caller-owned transaction boundary.
+
+## Phase 2 Part 3 implementation status
+
+Phase 2 Part 3 implements authentication state over HTTP without implementing
+authorization:
+
+- `POST /auth/login` accepts only a strict username and password object and
+  delegates password decisions to the existing Part 2 service. Wrong passwords,
+  nonexistent or malformed identifiers, unusable accounts, and malformed stored
+  verifiers all return the same `401` response. Login-body validation is also
+  sanitized so rejected password input is not echoed. Unexpected audit, session,
+  or database failures return a small `503` response without internal detail.
+- Each successful credential verification generates 32 bytes (256 bits) from
+  Python's cryptographic randomness source and encodes them as 43 unpadded
+  URL-safe Base64 characters. The server never accepts caller-selected session
+  material. Only a lowercase 64-character SHA-256 digest is persisted and used
+  for indexed lookup. SHA-256 is appropriate here because the source credential
+  is uniformly random and high entropy; Argon2 remains exclusive to passwords.
+- The session lifetime defaults to eight hours and is environment-backed with a
+  300-to-86400-second safety range. All application timestamps are UTC-aware. A
+  session is valid while `created_at <= now < expires_at`; equality at expiry is
+  invalid. `last_seen_at` remains nullable and is not updated in this slice, which
+  avoids an unconditional write on every authenticated request.
+- The `aegis_session` cookie is path-root, `HttpOnly`, and `SameSite=Strict`.
+  `Secure=false` is permitted only in explicit `development` or `test`
+  environments for local plain HTTP. Any other environment fails configuration
+  validation unless `Secure=true`. The token is never returned in JSON, a URL,
+  audit data, or an exception, and secret-bearing object fields suppress their
+  default representations.
+- One `SessionService` owns token creation, deterministic lookup hashing,
+  usability validation, and revocation. `GET /auth/me` uses the central dependency
+  and returns only username and display name. Missing, malformed, unknown,
+  expired, revoked, or otherwise invalid sessions deny authentication. Current
+  user usability is checked on every resolution, so a newly inactive or disabled
+  user cannot continue using an existing session.
+- `POST /auth/logout` revokes a known token hash server-side, commits the
+  revocation, and clears the client cookie. Missing, unknown, and already revoked
+  tokens are handled idempotently. A copied revoked token remains unusable.
+- A successful login always creates fresh server-selected material. If the
+  browser presents a known prior AEGIS session, that session is revoked in the
+  same transaction before the replacement is created. Arbitrary pre-login cookie
+  material is neither persisted nor promoted, preventing session fixation.
+
+The HTTP workflow owns the complete database transaction. The existing
+authentication service first emits its required `PASSWORD_AUTH_SUCCESS`
+credential-verification event, then may stage a verifier upgrade. The HTTP
+workflow stages prior-session revocation and fresh session creation and commits
+all database changes together. A session flush or commit failure rolls back the
+verifier upgrade and all session changes, returns no successful HTTP response,
+and emits no cookie. The current sink writes controlled events to ordinary
+application logging; it is non-persistent, non-transactional, and does not provide immutable audit
+evidence. `PASSWORD_AUTH_SUCCESS` means only that credentials were verified and
+the required logging call completed. Durable login/session establishment is the
+separate fact that the session transaction committed and the HTTP response issued
+its cookie. No session lifecycle events or persistent audit infrastructure are
+introduced in this slice, avoiding a false atomicity claim between logging and
+PostgreSQL.
+
+`SameSite=Strict` is a useful CSRF baseline, not a complete universal defense.
+Until a dedicated browser CSRF design is implemented, authenticated state-changing
+routes must not expand beyond the reviewed idempotent logout operation. The future
+authorized account-disable workflow must revoke all active sessions in the same
+transaction as account disablement; per-request current-account validation is the
+implemented interim guarantee. MFA/TOTP, authorization, roles, clearance,
+departments, compartments, classified records, frontend behavior, abuse controls,
+persistent audit storage, and deployment remain designed or deferred rather than
+implemented.

@@ -5,7 +5,7 @@ Project: AEGIS - Classified Intelligence Access System
 Completed Phase: Phase 1 - Foundation & Architecture
 Status: COMPLETE
 Current Phase: Phase 2 - Authentication & 2FA
-Current Part: Part 2 - Login Attempt Security & Audit Boundary
+Current Part: Part 3 - HTTP Login & Secure Server-Side Sessions
 Status: IN PROGRESS
 ```
 
@@ -48,17 +48,41 @@ mean that the planned security controls are operational.
   identity principal and no result grants authorization.
 - Pre-generated current-parameter Argon2id dummy verification for nonexistent,
   malformed-identifier, inactive, and disabled accounts.
-- Controlled `LOGIN_SUCCESS`/`LOGIN_FAILURE` event definitions and required
-  authentication audit-sink interface, with no audit persistence yet.
+- Controlled `PASSWORD_AUTH_SUCCESS`/`PASSWORD_AUTH_FAILURE` definitions for
+  credential verification and a required non-persistent logging-sink interface.
 - Allowlisted request context containing a required UUID request ID plus optional
   canonical IP and bounded, control-character-free user agent.
 - Fail-closed audit behavior that raises a controlled error and leaves an
   outdated verifier unchanged when required audit emission fails.
+- Reviewed `sessions` migration and typed model with user foreign key, unique
+  hash-only token storage, UTC lifecycle fields, useful checks, and lifecycle
+  indexes.
+- Fresh 256-bit opaque session credentials generated with cryptographic
+  randomness and stored only as deterministic SHA-256 lookup hashes.
+- Eight-hour default finite sessions with bounded environment configuration and
+  deterministic injected-clock tests.
+- Real `POST /auth/login` delegation to the existing generic login-attempt
+  service, with no credential or internal failure details in public responses.
+- `HttpOnly`, `SameSite=Strict`, path-root cookies; `Secure` is mandatory outside
+  explicit development/test environments and deliberately disabled for local
+  plain-HTTP development only.
+- Central session creation, resolution, usability, and revocation service that
+  rechecks expiry, revocation, and current account usability on every request.
+- Minimal identity-only `GET /auth/me` and server-side-revoking,
+  cookie-clearing, idempotent `POST /auth/logout` endpoints.
+- Session-fixation defense: login never adopts a client token, revokes a known
+  presented AEGIS session, and creates fresh server-selected material.
+- Caller-owned login transaction that rolls back verifier upgrades, prior-session
+  revocation, and new-session state on persistence/commit failure and emits no
+  cookie until commit succeeds.
+- Precise audit semantics: credential events never claim durable session
+  establishment. The logging sink is non-transactional; committed PostgreSQL
+  session state and cookie issuance are separate lifecycle facts.
 
 Latest verification with Python 3.13.15:
 
 ```text
-pytest: 35 passed, 2 warnings in 5.09s
+pytest: 52 passed, 2 warnings in 7.12s
 GET /: {"name":"AEGIS","status":"Development","api":"Available"}
 GET /health: {"status":"ok"}
 git diff --check: exit 0, no whitespace errors; LF-to-CRLF notices emitted
@@ -72,11 +96,10 @@ remaining PostgreSQL entities and relationships, session storage, MFA storage,
 audit events, deletion behavior, database privilege separation, and optional RLS
 defense in depth.
 
-PostgreSQL infrastructure, login HTTP behavior, sessions, cookies, MFA/TOTP,
-authorization enforcement, classified records, frontend, bot protection,
-persistent audit storage, and deployment remain unimplemented. Department and
-clearance relationships will extend the existing user model later; they were not
-needed for the current authentication slices.
+PostgreSQL infrastructure, MFA/TOTP, authorization enforcement, classified
+records, frontend, bot protection, persistent audit storage, and deployment
+remain unimplemented. Department and clearance relationships will extend the
+existing user model later; they are not needed for authentication state.
 
 ## Important security decisions
 
@@ -115,9 +138,13 @@ needed for the current authentication slices.
 - `aegis/db/` - typed user model, engine/session setup, and user repository.
 - `aegis/security/` - identity normalization and Argon2id password handling.
 - `aegis/security/authentication_events.py` - bounded request context, controlled
-  login event definitions, and audit-sink/error boundary.
+  credential-verification event definitions, and audit-sink/error boundary.
 - `aegis/services/authentication.py` - fail-closed password-authentication
-  and login-attempt orchestration with no HTTP, session, or authorization behavior.
+  and login-attempt orchestration with no authorization behavior.
+- `aegis/services/sessions.py` - centralized token generation, hashing, session
+  creation, resolution, usability, and revocation.
+- `aegis/api/routes/authentication.py` and `aegis/api/dependencies.py` - HTTP
+  login/session endpoints, transaction ownership, and central dependencies.
 - `tests/` - foundation, persistence, migration, password, and authentication
   service tests.
 
@@ -135,8 +162,16 @@ needed for the current authentication slices.
 - Dummy verification mitigates practical username/account enumeration through
   password-processing cost; it does not guarantee mathematically constant timing
   across database, network, interpreter, or operating-system behavior.
-- No HTTP login, session, or later Phase 2 control is implemented yet. This is
-  expected, not a verification failure.
+- Authentication audit output currently uses ordinary non-persistent application
+  logging. It is required for the credential-verification workflow but is neither
+  immutable nor atomic with PostgreSQL. Persistent transactional audit evidence
+  remains deferred.
+- `SameSite=Strict` is baseline protection, not a complete CSRF system. Until a
+  dedicated strategy is implemented, authenticated state-changing browser scope
+  must not expand beyond the reviewed idempotent logout operation.
+- The future authorized account-disable workflow must revoke a user's active
+  sessions transactionally. Until that workflow exists, every session validation
+  rechecks account usability, so disabled users fail immediately.
 
 ## Git and deployment checkpoint
 
@@ -154,6 +189,8 @@ Synchronization at checkpoint: main up to date with origin/main
 Phase 2 Part 1 is implemented, verified, and accepted for its Git/GitHub
 checkpoint at `5e2f9c7` (`Complete AEGIS Phase 2 authentication foundation`).
 Phase 2 Part 2 is implemented, verified, and accepted for its Git/GitHub
+checkpoint at `985f82e` (`Complete AEGIS Phase 2 login security boundary`).
+Phase 2 Part 3 is implemented, verified, and accepted for its Git/GitHub
 checkpoint. Git history is authoritative for the resulting commit identifier.
 
 Deployment status is **local development only**. PostgreSQL and all production or
@@ -186,20 +223,21 @@ before asking Codex to implement anything.
 
 ## Current Phase 2 boundary
 
-Parts 1 and 2 now implement persistence, password security, generic login-attempt
-orchestration, enumeration-cost mitigation, bounded authentication context, and
-the application-side audit-emission boundary. They expose no authentication over
-HTTP and create no session or authorization state. Part 3 should review these
-verified boundaries before designing generic HTTP responses and server-side
-session ownership.
+Parts 1 through 3 now implement persistence, password security, generic
+login-attempt orchestration, enumeration-cost mitigation, bounded authentication
+context, the application-side audit-emission boundary, HTTP login, and secure
+server-side authentication sessions. Authentication state contains identity only
+and creates no authorization state.
 
 Remaining Phase 2 work includes:
 
-1. HTTP login flow mapped to the existing generic service results.
-2. Disabled-account behavior and future active-session invalidation.
+1. TOTP/MFA design and implementation after the password/session boundary is
+   accepted.
+2. The future authorized account-disable workflow with transactional bulk session
+   revocation; per-request validation already denies disabled accounts.
 3. Persistent audit ownership and later abuse-control ownership.
-4. Secure session token generation, hash-only persistence, cookies, expiry,
-   rotation, and revocation.
+4. A dedicated CSRF mechanism before authenticated state-changing browser
+   operations expand beyond logout.
 
 TOTP/MFA follows only after password authentication is established and verified.
 Phase 2 must not infer authorization from authentication success.

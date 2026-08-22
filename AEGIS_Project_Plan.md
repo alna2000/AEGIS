@@ -30,8 +30,12 @@ Part 2 designed the security architecture, and Part 3 designed the database
 architecture. Phase 2 - Authentication & 2FA is now in progress. Part 1
 implements the minimum user persistence, migration, password-security, and
 service boundary. Part 2 implements generic login-attempt orchestration,
-enumeration-cost mitigation, bounded request context, and an authentication
-audit-emission interface. Login HTTP behavior, sessions, and MFA remain deferred.
+enumeration-cost mitigation, bounded request context, and a required
+credential-verification logging interface. Part 3 implements HTTP login,
+hash-only server-side sessions, secure cookies, centralized session validation,
+current-identity
+resolution, and logout/revocation. MFA/TOTP remains deferred; authentication
+state grants no authorization.
 
 ## Phase Completion and Handover Protocol
 

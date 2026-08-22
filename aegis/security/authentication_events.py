@@ -1,4 +1,4 @@
-"""Controlled login-audit events and bounded request metadata."""
+"""Controlled credential-audit events and bounded request metadata."""
 
 from __future__ import annotations
 
@@ -17,10 +17,10 @@ class InvalidAuthenticationContext(ValueError):
 
 
 class AuthenticationEventType(str, Enum):
-    """Authentication events owned by Phase 2."""
+    """Credential-verification events owned by Phase 2."""
 
-    LOGIN_SUCCESS = "LOGIN_SUCCESS"
-    LOGIN_FAILURE = "LOGIN_FAILURE"
+    PASSWORD_AUTH_SUCCESS = "PASSWORD_AUTH_SUCCESS"
+    PASSWORD_AUTH_FAILURE = "PASSWORD_AUTH_FAILURE"
 
 
 class AuthenticationOutcome(str, Enum):
@@ -93,12 +93,16 @@ class AuthenticationAuditEvent:
 
     def __post_init__(self) -> None:
         if self.outcome is AuthenticationOutcome.SUCCESS:
-            if self.event_type is not AuthenticationEventType.LOGIN_SUCCESS:
-                raise ValueError("successful audit outcome requires LOGIN_SUCCESS")
+            if self.event_type is not AuthenticationEventType.PASSWORD_AUTH_SUCCESS:
+                raise ValueError(
+                    "successful credential outcome requires PASSWORD_AUTH_SUCCESS"
+                )
             if self.reason_code is not None or self.user_id is None or self.username is None:
                 raise ValueError("successful audit event requires an identified user")
-        elif self.event_type is not AuthenticationEventType.LOGIN_FAILURE:
-            raise ValueError("failed audit outcome requires LOGIN_FAILURE")
+        elif self.event_type is not AuthenticationEventType.PASSWORD_AUTH_FAILURE:
+            raise ValueError(
+                "failed credential outcome requires PASSWORD_AUTH_FAILURE"
+            )
         elif self.reason_code is None:
             raise ValueError("failed audit event requires a controlled reason code")
 

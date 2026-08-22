@@ -4,10 +4,12 @@ AEGIS is a fictional cybersecurity learning environment. All future identities,
 organizations, intelligence records, classifications, and events will be synthetic.
 
 **Phase 1 - Foundation & Architecture** is complete. **Phase 2 - Authentication
-& 2FA** is in progress: Part 1 implements the authentication persistence model,
-reviewed Alembic migration, canonical user identifiers, Argon2id password
-security, and a service-level authentication boundary. PostgreSQL remains
-unprovisioned and unconnected; login HTTP routes, sessions, and MFA are deferred.
+& 2FA** is in progress. Parts 1-3 implement user/password persistence, generic
+login-attempt security and non-persistent credential-audit logging, HTTP login,
+and finite hash-only server-side sessions. Authentication proves identity only;
+MFA/TOTP and all
+authorization remain deferred. PostgreSQL remains the application target and is
+not provisioned by this repository.
 
 ## Local setup (Windows PowerShell)
 
@@ -24,12 +26,17 @@ python -m pip install -e ".[test]"
 To customize safe local settings, copy `.env.example` to `.env` and edit it.
 The `.env` file is intentionally excluded from Git. Set `AEGIS_DATABASE_URL`
 there with local PostgreSQL credentials; the tracked example contains no
-password.
+password. The default eight-hour session lifetime is configurable with
+`AEGIS_SESSION_LIFETIME_SECONDS` from 300 through 86400 seconds. The
+`aegis_session` cookie is `HttpOnly`, `SameSite=Strict`, and path-root. Local
+development deliberately permits `AEGIS_SESSION_COOKIE_SECURE=false` for plain
+HTTP; every environment other than explicit `development` or `test` refuses to
+start unless secure cookies are enabled.
 
 Run the tests:
 
 ```powershell
-python -m pytest
+.\.venv\Scripts\python.exe -m pytest --basetemp=.pytest-temp
 ```
 
 Apply reviewed migrations to a configured local PostgreSQL database:
@@ -55,7 +62,19 @@ The local API will be available at `http://127.0.0.1:8000`.
 | --- | --- | --- |
 | `GET` | `/` | AEGIS development status |
 | `GET` | `/health` | Minimal process health check |
+| `POST` | `/auth/login` | Verify a synthetic username/password and create a server-side session |
+| `GET` | `/auth/me` | Return safe identity for a usable current session |
+| `POST` | `/auth/logout` | Revoke the current server-side session and clear its cookie |
 
-No login endpoint exists yet. Sessions, cookies, MFA/TOTP, authorization,
-classified records, abuse protection, frontend work, and deployment have not
-been implemented.
+For local manual testing, first apply migrations and create an active synthetic
+user through a trusted local database/bootstrap workflow; no public account
+creation endpoint exists. Start Uvicorn, use one in-memory HTTP client/session to
+`POST /auth/login`, `GET /auth/me`, `POST /auth/logout`, then confirm a final
+`GET /auth/me` returns `401`. Do not place session credentials in URLs, JSON,
+localStorage, logs, or a checked-in cookie jar.
+
+`SameSite=Strict` supplies useful baseline CSRF protection but is not a complete
+CSRF design. Authenticated state-changing browser functionality must not expand
+beyond the reviewed idempotent logout endpoint until dedicated CSRF protection is
+implemented. MFA/TOTP, authorization, classified records, abuse protection,
+frontend work, persistent audit storage, and deployment remain unimplemented.
