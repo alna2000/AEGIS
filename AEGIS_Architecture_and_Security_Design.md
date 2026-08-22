@@ -804,7 +804,43 @@ disposable test backend for portable ORM behavior and migration upgrade/downgrad
 tests. PostgreSQL remains the production target, and the migration is also
 verified by rendering PostgreSQL SQL offline.
 
-The future Phase 2 Part 2 HTTP login boundary must mitigate username-enumeration
-timing by ensuring nonexistent and unusable accounts do not receive observably
-cheaper password processing than usable accounts. That mitigation is deliberately
-not implemented in this persistence/password-service part.
+Part 1 deliberately deferred username-enumeration timing mitigation because it
+owned only persistence and password verification. The Part 2 status below records
+the application-service mitigation that now performs password work for
+nonexistent and unusable accounts.
+
+## Phase 2 Part 2 implementation status
+
+Phase 2 Part 2 now implements the application-service boundary for a password
+login attempt, without exposing HTTP behavior or creating a session:
+
+- Every ordinary rejection returns the same `FAILURE` result with no internal
+  reason. Only `SUCCESS` contains the previously defined identity principal,
+  which grants no authorization.
+- Nonexistent, malformed-identifier, inactive, and disabled-account paths perform
+  one verification against a pre-generated valid Argon2id dummy verifier using
+  the current parameters. The dummy input was randomly generated and discarded;
+  the verifier belongs to no account and its verification result is ignored.
+- Dummy work mitigates the dominant password-processing cost signal but is not a
+  mathematical constant-time guarantee for database, network, interpreter, or
+  operating-system behavior.
+- `LOGIN_SUCCESS` and `LOGIN_FAILURE` events use controlled event, outcome, and
+  internal reason enums plus allowlisted fields. No arbitrary metadata container
+  or credential field exists in the event model.
+- Authentication context requires a UUID correlation ID. Optional IP addresses
+  are parsed and canonicalized, invalid IPs are discarded, and user agents are
+  stripped, rejected when they contain control characters, and limited to 256
+  characters. These values are audit context only, never identity or policy.
+
+Authentication audit emission is required. An unexpected sink failure raises a
+controlled `AuthenticationAuditError`; the service returns neither success nor
+an ordinary failure result. For a valid outdated password verifier, the success
+event is emitted before the replacement verifier is assigned and flushed. An
+audit failure therefore leaves the stored verifier unchanged. Repository helpers
+still do not commit: transaction ownership and later coordination with persistent
+audit/session storage remain with the calling workflow.
+
+Persistent `audit_events`, retry/queue behavior, retention, querying, integrity
+monitoring, SIEM export, and audit authorization remain deferred. The future Part
+3 HTTP/session workflow must preserve the generic result semantics, required
+audit behavior, and caller-owned transaction boundary.

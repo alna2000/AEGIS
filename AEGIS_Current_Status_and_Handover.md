@@ -5,7 +5,7 @@ Project: AEGIS - Classified Intelligence Access System
 Completed Phase: Phase 1 - Foundation & Architecture
 Status: COMPLETE
 Current Phase: Phase 2 - Authentication & 2FA
-Current Part: Part 1 - Authentication Persistence & Password Security
+Current Part: Part 2 - Login Attempt Security & Audit Boundary
 Status: IN PROGRESS
 ```
 
@@ -44,11 +44,21 @@ mean that the planned security controls are operational.
 - Repository and authentication-service boundary that refuses nonexistent,
   invalid, inactive, disabled, or malformed-verifier accounts.
 - Disposable SQLite persistence/migration tests; PostgreSQL remains the target.
+- Generic `SUCCESS`/`FAILURE` login-attempt result; only success contains an
+  identity principal and no result grants authorization.
+- Pre-generated current-parameter Argon2id dummy verification for nonexistent,
+  malformed-identifier, inactive, and disabled accounts.
+- Controlled `LOGIN_SUCCESS`/`LOGIN_FAILURE` event definitions and required
+  authentication audit-sink interface, with no audit persistence yet.
+- Allowlisted request context containing a required UUID request ID plus optional
+  canonical IP and bounded, control-character-free user agent.
+- Fail-closed audit behavior that raises a controlled error and leaves an
+  outdated verifier unchanged when required audit emission fails.
 
 Latest verification with Python 3.13.15:
 
 ```text
-pytest: 22 passed, 2 warnings in 3.50s
+pytest: 35 passed, 2 warnings in 5.09s
 GET /: {"name":"AEGIS","status":"Development","api":"Available"}
 GET /health: {"status":"ok"}
 git diff --check: exit 0, no whitespace errors; LF-to-CRLF notices emitted
@@ -63,10 +73,10 @@ audit events, deletion behavior, database privilege separation, and optional RLS
 defense in depth.
 
 PostgreSQL infrastructure, login HTTP behavior, sessions, cookies, MFA/TOTP,
-authorization enforcement, classified records, frontend, bot protection, audit
-persistence, and deployment remain unimplemented. Department and clearance
-relationships will extend the existing user model later; they were not needed
-for this password-authentication slice.
+authorization enforcement, classified records, frontend, bot protection,
+persistent audit storage, and deployment remain unimplemented. Department and
+clearance relationships will extend the existing user model later; they were not
+needed for the current authentication slices.
 
 ## Important security decisions
 
@@ -104,8 +114,10 @@ for this password-authentication slice.
 - `aegis/core/config.py` - environment-based settings.
 - `aegis/db/` - typed user model, engine/session setup, and user repository.
 - `aegis/security/` - identity normalization and Argon2id password handling.
+- `aegis/security/authentication_events.py` - bounded request context, controlled
+  login event definitions, and audit-sink/error boundary.
 - `aegis/services/authentication.py` - fail-closed password-authentication
-  service boundary with no HTTP or authorization behavior.
+  and login-attempt orchestration with no HTTP, session, or authorization behavior.
 - `tests/` - foundation, persistence, migration, password, and authentication
   service tests.
 
@@ -120,8 +132,11 @@ for this password-authentication slice.
   `.venv\Scripts\Activate.ps1`. Direct invocation with
   `.venv\Scripts\python.exe -m pytest` succeeds; no dependency or policy change
   was made during this documentation update.
-- No HTTP login or later Phase 2 control is implemented yet. This is expected,
-  not a verification failure.
+- Dummy verification mitigates practical username/account enumeration through
+  password-processing cost; it does not guarantee mathematically constant timing
+  across database, network, interpreter, or operating-system behavior.
+- No HTTP login, session, or later Phase 2 control is implemented yet. This is
+  expected, not a verification failure.
 
 ## Git and deployment checkpoint
 
@@ -137,6 +152,8 @@ Synchronization at checkpoint: main up to date with origin/main
 ```
 
 Phase 2 Part 1 is implemented, verified, and accepted for its Git/GitHub
+checkpoint at `5e2f9c7` (`Complete AEGIS Phase 2 authentication foundation`).
+Phase 2 Part 2 is implemented, verified, and accepted for its Git/GitHub
 checkpoint. Git history is authoritative for the resulting commit identifier.
 
 Deployment status is **local development only**. PostgreSQL and all production or
@@ -169,16 +186,18 @@ before asking Codex to implement anything.
 
 ## Current Phase 2 boundary
 
-Part 1 implements only persistence, password security, and service-level identity
-verification. It does not expose authentication over HTTP and creates no session
-or authorization state. The next Phase 2 part should review the verified Part 1
-boundary before designing generic login responses and session ownership.
+Parts 1 and 2 now implement persistence, password security, generic login-attempt
+orchestration, enumeration-cost mitigation, bounded authentication context, and
+the application-side audit-emission boundary. They expose no authentication over
+HTTP and create no session or authorization state. Part 3 should review these
+verified boundaries before designing generic HTTP responses and server-side
+session ownership.
 
 Remaining Phase 2 work includes:
 
-1. Login flow and generic authentication errors.
+1. HTTP login flow mapped to the existing generic service results.
 2. Disabled-account behavior and future active-session invalidation.
-3. Failed-login handling, auditing boundaries, and later abuse-control ownership.
+3. Persistent audit ownership and later abuse-control ownership.
 4. Secure session token generation, hash-only persistence, cookies, expiry,
    rotation, and revocation.
 

@@ -1,6 +1,7 @@
 """Authentication service boundary tests."""
 
 from datetime import datetime, timezone
+import uuid
 
 from argon2 import PasswordHasher
 from argon2.low_level import Type
@@ -8,6 +9,10 @@ from sqlalchemy.orm import Session
 
 from aegis.db.models import User
 from aegis.db.repositories import UserRepository
+from aegis.security.authentication_events import (
+    AuthenticationAuditEvent,
+    AuthenticationRequestContext,
+)
 from aegis.security.passwords import PasswordService
 from aegis.services.authentication import AuthenticationService
 
@@ -15,9 +20,33 @@ from aegis.services.authentication import AuthenticationService
 SYNTHETIC_PASSWORD = "Synthetic-Nightfall-73!"
 
 
+class DiscardingAuditSink:
+    def record(self, event: AuthenticationAuditEvent) -> None:
+        """Accept controlled events for Part 1 compatibility tests."""
+
+
 def build_service(db_session: Session) -> tuple[UserRepository, AuthenticationService]:
     users = UserRepository(db_session)
-    return users, AuthenticationService(users, PasswordService())
+    return users, AuthenticationService(
+        users,
+        PasswordService(),
+        DiscardingAuditSink(),
+    )
+
+
+def authenticate(
+    service: AuthenticationService,
+    username: str,
+    password: str,
+):
+    """Return the principal from the login-attempt boundary for legacy assertions."""
+
+    result = service.attempt_login(
+        username,
+        password,
+        AuthenticationRequestContext(request_id=uuid.uuid4()),
+    )
+    return result.principal
 
 
 def persist_user(
@@ -45,7 +74,7 @@ def test_active_user_with_correct_password_authenticates(db_session: Session) ->
     password_hash = PasswordService().hash(SYNTHETIC_PASSWORD)
     user = persist_user(users, password_hash)
 
-    principal = authentication.authenticate("SYNTHETIC.OPERATOR", SYNTHETIC_PASSWORD)
+    principal = authenticate(authentication, "SYNTHETIC.OPERATOR", SYNTHETIC_PASSWORD)
 
     assert principal is not None
     assert principal.user_id == user.id
@@ -58,11 +87,12 @@ def test_incorrect_password_and_nonexistent_user_fail_closed(
     users, authentication = build_service(db_session)
     persist_user(users, PasswordService().hash(SYNTHETIC_PASSWORD))
 
-    assert authentication.authenticate(
+    assert authenticate(
+        authentication,
         "synthetic.operator", "Synthetic-Wrong-Password!"
     ) is None
-    assert authentication.authenticate("synthetic.missing", SYNTHETIC_PASSWORD) is None
-    assert authentication.authenticate("invalid username", SYNTHETIC_PASSWORD) is None
+    assert authenticate(authentication, "synthetic.missing", SYNTHETIC_PASSWORD) is None
+    assert authenticate(authentication, "invalid username", SYNTHETIC_PASSWORD) is None
 
 
 def test_disabled_user_never_becomes_a_principal(db_session: Session) -> None:
@@ -74,7 +104,8 @@ def test_disabled_user_never_becomes_a_principal(db_session: Session) -> None:
         disabled_at=datetime.now(timezone.utc),
     )
 
-    assert authentication.authenticate(
+    assert authenticate(
+        authentication,
         "synthetic.operator", SYNTHETIC_PASSWORD
     ) is None
 
@@ -83,7 +114,8 @@ def test_malformed_stored_password_hash_fails_closed(db_session: Session) -> Non
     users, authentication = build_service(db_session)
     persist_user(users, "malformed-stored-verifier")
 
-    assert authentication.authenticate(
+    assert authenticate(
+        authentication,
         "synthetic.operator", SYNTHETIC_PASSWORD
     ) is None
 
@@ -103,7 +135,7 @@ def test_successful_authentication_upgrades_outdated_hash(
     user = persist_user(users, legacy_hasher.hash(SYNTHETIC_PASSWORD))
     original_hash = user.password_hash
 
-    principal = authentication.authenticate("synthetic.operator", SYNTHETIC_PASSWORD)
+    principal = authenticate(authentication, "synthetic.operator", SYNTHETIC_PASSWORD)
 
     assert principal is not None
     assert user.password_hash != original_hash

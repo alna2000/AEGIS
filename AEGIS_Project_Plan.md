@@ -29,7 +29,9 @@ Phase 1 is complete: Part 1 established the verified minimal FastAPI foundation,
 Part 2 designed the security architecture, and Part 3 designed the database
 architecture. Phase 2 - Authentication & 2FA is now in progress. Part 1
 implements the minimum user persistence, migration, password-security, and
-service boundary; login HTTP behavior, sessions, and MFA remain deferred.
+service boundary. Part 2 implements generic login-attempt orchestration,
+enumeration-cost mitigation, bounded request context, and an authentication
+audit-emission interface. Login HTTP behavior, sessions, and MFA remain deferred.
 
 ## Phase Completion and Handover Protocol
 
