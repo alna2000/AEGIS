@@ -9,9 +9,13 @@ description = "A fictional classified-intelligence access system for cybersecuri
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.14,<2.0",
+    "argon2-cffi>=23.1,<26.0",
     "fastapi>=0.115,<1.0",
     "pydantic-settings>=2.6,<3.0",
+    "psycopg[binary]>=3.2,<4.0",
     "python-dotenv>=1.0,<2.0",
+    "sqlalchemy>=2.0.36,<3.0",
     "uvicorn>=0.32,<1.0",
 ]
 

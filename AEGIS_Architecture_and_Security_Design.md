@@ -762,3 +762,49 @@ This database architecture is **designed but not implemented**. PostgreSQL was n
 installed; no database, tables, ORM models, migrations, connections, seed scripts,
 or database-dependent application behavior were created. SQLAlchemy and Alembic
 were not installed or configured.
+
+## Phase 2 Part 1 implementation status
+
+The Phase 1 design statements above remain the historical architecture contract.
+Phase 2 Part 1 now implements its first controlled subset:
+
+- SQLAlchemy 2.x persistence and an Alembic migration targeting PostgreSQL.
+- The incremental `users` table with a UUID primary key, canonical unique
+  username, synthetic display name, nullable canonical unique email, Argon2
+  verifier, active state, and timezone-aware lifecycle fields.
+- Explicit database constraints for canonical identifiers, required lengths,
+  non-empty password verifiers, and active/disabled consistency.
+- A repository boundary plus a password-authentication service that returns an
+  identity only for an active, non-disabled account with a valid verifier.
+- Argon2id verifier upgrade detection and replacement inside the caller-owned
+  database transaction.
+
+New password verifiers require at least eight Unicode characters and at most
+1024 UTF-8 bytes. Spaces, whitespace, Unicode, and passphrases remain valid; no
+composition rule is imposed. Verification retains compatibility with valid
+legacy verifiers whose historical password is shorter than the current creation
+minimum. Malformed, non-UTF-8-encodable Python strings fail closed without being
+included in validation messages.
+
+Usernames are trimmed, restricted to 3-64 ASCII letters, digits, dots,
+underscores, or hyphens, then lowercased. Optional emails are trimmed, restricted
+to a simple valid ASCII address form, and lowercased as one identity value.
+Restricting these login identifiers to ASCII avoids implicit or surprising
+Unicode canonicalization. Display names remain separate and may contain Unicode.
+
+Department and clearance foreign keys will be added to this same `users` table
+with their normalized reference entities in a later controlled slice. They are
+not technically required for password authentication, and adding them now would
+introduce authorization data before its owning phase. Roles, compartments,
+records, sessions, MFA credentials, and audit persistence also remain designed
+and deferred.
+
+SQLite is not an application architecture choice. It is used only as an isolated,
+disposable test backend for portable ORM behavior and migration upgrade/downgrade
+tests. PostgreSQL remains the production target, and the migration is also
+verified by rendering PostgreSQL SQL offline.
+
+The future Phase 2 Part 2 HTTP login boundary must mitigate username-enumeration
+timing by ensuring nonexistent and unusable accounts do not receive observably
+cheaper password processing than usable accounts. That mitigation is deliberately
+not implemented in this persistence/password-service part.

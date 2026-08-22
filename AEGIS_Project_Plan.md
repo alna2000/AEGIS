@@ -27,8 +27,9 @@ learning path or stronger security approach is discovered.
 
 Phase 1 is complete: Part 1 established the verified minimal FastAPI foundation,
 Part 2 designed the security architecture, and Part 3 designed the database
-architecture. Architecture-only controls are not implemented. Phase 2 -
-Authentication & 2FA is the next planned phase and has not started.
+architecture. Phase 2 - Authentication & 2FA is now in progress. Part 1
+implements the minimum user persistence, migration, password-security, and
+service boundary; login HTTP behavior, sessions, and MFA remain deferred.
 
 ## Phase Completion and Handover Protocol
 

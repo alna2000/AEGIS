@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     app_name: str = "AEGIS"
     environment: str = "development"
     debug: bool = True
+    database_url: str = "postgresql+psycopg://aegis_app@localhost:5432/aegis"
 
     model_config = SettingsConfigDict(
         env_file=".env",
