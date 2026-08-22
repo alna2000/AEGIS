@@ -3,9 +3,9 @@
 import uuid
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, contains_eager, joinedload
 
-from aegis.db.models import MfaCredential, User, UserSession
+from aegis.db.models import MfaChallenge, MfaCredential, User, UserSession
 from aegis.security.identity import InvalidIdentity, normalize_username
 
 
@@ -90,6 +90,42 @@ class MfaCredentialRepository:
         if for_update:
             statement = statement.with_for_update()
         return self._session.scalar(statement)
+
+    def flush(self) -> None:
+        self._session.flush()
+
+
+class MfaChallengeRepository:
+    """Persist and lock short-lived hash-only MFA challenges."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, challenge: MfaChallenge) -> MfaChallenge:
+        self._session.add(challenge)
+        return challenge
+
+    def get_by_token_hash_for_update(self, token_hash: str) -> MfaChallenge | None:
+        statement = (
+            select(MfaChallenge)
+            .join(MfaChallenge.user)
+            .where(MfaChallenge.token_hash == token_hash)
+            .options(contains_eager(MfaChallenge.user))
+            .with_for_update(of=(MfaChallenge, User))
+        )
+        return self._session.scalar(statement)
+
+    def get_open_for_user_for_update(self, user_id: uuid.UUID) -> list[MfaChallenge]:
+        statement = (
+            select(MfaChallenge)
+            .where(
+                MfaChallenge.user_id == user_id,
+                MfaChallenge.consumed_at.is_(None),
+                MfaChallenge.revoked_at.is_(None),
+            )
+            .with_for_update()
+        )
+        return list(self._session.scalars(statement))
 
     def flush(self) -> None:
         self._session.flush()

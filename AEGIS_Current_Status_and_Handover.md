@@ -2,11 +2,10 @@
 
 ```text
 Project: AEGIS - Classified Intelligence Access System
-Completed Phase: Phase 1 - Foundation & Architecture
+Completed Phase: Phase 2 - Authentication & 2FA
 Status: COMPLETE
-Current Phase: Phase 2 - Authentication & 2FA
-Current Part: Part 4 - TOTP/MFA Foundation
-Status: IN PROGRESS
+Next Phase: Phase 3 - Authorization & Classified Records
+Status: NOT STARTED
 ```
 
 ## What AEGIS is
@@ -99,14 +98,38 @@ mean that the planned security controls are operational.
 - Controlled `TOTP_VERIFICATION_SUCCESS` and `TOTP_VERIFICATION_FAILURE` audit
   semantics containing no secret, entered code, encryption key, or provisioning
   URI.
-- Deliberate service-only HTTP boundary: no new authenticated state-changing MFA
-  routes were added before a dedicated CSRF design. `/auth/login` remains the
-  existing password/session workflow and does not yet require MFA.
+- Part 4 deliberately kept enrollment at the service layer. Part 5 exposes only
+  pre-authentication TOTP challenge completion; enrollment and credential
+  disablement remain unexposed pending a dedicated CSRF design.
+- Reviewed `mfa_challenges` migration and typed model with a user foreign key,
+  unique hash-only token lookup, five-minute expiry, mutually exclusive consumed
+  and revoked states, bounded request context, and lifecycle indexes.
+- Separate 256-bit random MFA challenge credentials stored only as SHA-256 hashes.
+  New password logins revoke older open challenges, and PostgreSQL row locking
+  makes successful completion single-use in the caller-owned transaction.
+- Final `/auth/login` state machine: non-MFA users retain direct fresh session
+  issuance; enabled-TOTP users receive only `authenticated=false`,
+  `mfa_required=true`, and a short-lived challenge cookie after password success.
+- `POST /auth/mfa/totp/verify` resolves the challenge-bound user, delegates to
+  centralized TOTP verification/replay protection, consumes the challenge,
+  replaces a known old session, commits, clears the challenge cookie, and only
+  then issues a fresh normal session cookie.
+- Challenge cookie is distinct from the session cookie, `HttpOnly`,
+  `SameSite=Strict`, scoped to `/auth`, and `Secure` outside development/test.
+  It is never stored raw, returned in JSON, placed in URLs, or promoted to a
+  normal session.
+- Explicit bypass and failure coverage for password-only MFA attempts, `/auth/me`
+  before completion, missing/random/expired/consumed/wrong-user challenges,
+  disabled users and credentials, TOTP replay, challenge replay, fixation, and
+  session-persistence rollback.
+- Phase 2 authentication security review completed. Password, session, MFA,
+  challenge, audit, generic-error, transaction, and CSRF boundaries were reviewed
+  and negative-tested. No authorization behavior was introduced.
 
 Latest verification with Python 3.13.15:
 
 ```text
-pytest: 73 passed, 2 warnings in 7.79s
+pytest: 96 passed, 2 warnings in 11.85s
 GET /: {"name":"AEGIS","status":"Development","api":"Available"}
 GET /health: {"status":"ok"}
 git diff --check: exit 0, no whitespace errors; LF-to-CRLF notices emitted
@@ -120,9 +143,9 @@ remaining PostgreSQL entities and relationships, session storage, MFA storage,
 audit events, deletion behavior, database privilege separation, and optional RLS
 defense in depth.
 
-PostgreSQL infrastructure, final password-login MFA integration, authorization
-enforcement, classified records, frontend, bot protection, persistent audit
-storage, and deployment remain unimplemented. Department and clearance
+PostgreSQL infrastructure, authorization enforcement, classified records,
+frontend, bot protection, persistent audit storage, and deployment remain
+unimplemented. Department and clearance
 relationships will extend the existing user model later; they are not needed for
 authentication state.
 
@@ -153,6 +176,10 @@ authentication state.
 - `AEGIS_Architecture_and_Security_Design.md` - authoritative Phase 1 security
   and database architecture.
 - `Phase_1_Completion_Summary.md` - official Phase 1 checkpoint summary.
+- `Phase_2_Completion_Summary.md` - official Phase 2 implementation and security
+  review summary.
+- `AEGIS_Phase3_Opening_Prompt.md` - mandatory next-chat handoff; Phase 3 remains
+  unstarted.
 - `AEGIS_Decision_Log.md` - significant durable project decisions.
 - `pyproject.toml` - Python package, dependencies, and pytest configuration.
 - `alembic.ini` and `migrations/` - environment-backed migration configuration
@@ -171,6 +198,8 @@ authentication state.
   creation, resolution, usability, and revocation.
 - `aegis/services/mfa.py` - centralized TOTP enrollment, confirmation,
   verification, replay protection, and disablement.
+- `aegis/services/mfa_challenges.py` - centralized challenge generation, hashing,
+  requirement decisions, expiry, resolution, consumption, and revocation.
 - `aegis/api/routes/authentication.py` and `aegis/api/dependencies.py` - HTTP
   login/session endpoints, transaction ownership, and central dependencies.
 - `tests/` - foundation, persistence, migration, password, and authentication
@@ -194,9 +223,11 @@ authentication state.
   logging. It is required for the credential-verification workflow but is neither
   immutable nor atomic with PostgreSQL. Persistent transactional audit evidence
   remains deferred.
-- `SameSite=Strict` is baseline protection, not a complete CSRF system. Until a
-  dedicated strategy is implemented, authenticated state-changing browser scope
-  must not expand beyond the reviewed idempotent logout operation.
+- `SameSite=Strict` is baseline protection, not a complete CSRF system. The
+  reviewed MFA completion endpoint is pre-authentication and also requires a
+  current TOTP proof; logout is idempotent. MFA enrollment/disablement and future
+  authenticated state-changing browser scope must not expand without a dedicated
+  strategy.
 - The future authorized account-disable workflow must revoke a user's active
   sessions transactionally. Until that workflow exists, every session validation
   rechecks account usability, so disabled users fail immediately.
@@ -222,6 +253,8 @@ Phase 2 Part 3 is implemented, verified, and accepted for its Git/GitHub
 checkpoint. Git history is authoritative for the resulting commit identifier.
 Phase 2 Part 4 is implemented, verified, and accepted for its Git/GitHub
 checkpoint. Git history is authoritative for the resulting commit identifier.
+Phase 2 Part 5 and closure documentation are implemented and locally verified;
+the final Phase 2 Git/GitHub checkpoint remains to be created when authorized.
 
 Deployment status is **local development only**. PostgreSQL and all production or
 public deployment infrastructure remain unconfigured.
@@ -235,41 +268,38 @@ completion summary, a mandatory opening prompt for the next phase, appropriate
 verification, and a meaningful Git/GitHub checkpoint. A full project ZIP is
 optional and is not a routine handover requirement.
 
-For Phase 2, the minimum new-chat package is:
+For Phase 3, the minimum new-chat package is:
 
 ```text
-AEGIS_Phase2_Opening_Prompt.md
+AEGIS_Phase3_Opening_Prompt.md
 AEGIS_Current_Status_and_Handover.md
 AEGIS_Project_Plan.md
-Phase_1_Completion_Summary.md
+Phase_2_Completion_Summary.md
 AEGIS_Architecture_and_Security_Design.md
 AEGIS_Decision_Log.md
 ```
 
-The architecture and decision documents are included because authentication is
-security-sensitive. Normal continuity follows the source-of-truth hierarchy in
-the project plan, not a ZIP archive. The Phase 2 chat must review these documents
-before asking Codex to implement anything.
+The architecture and decision documents are included because authorization and
+classified-record handling are security-sensitive. Normal continuity follows the
+source-of-truth hierarchy in the project plan, not a ZIP archive. The Phase 3 chat
+must review these documents before asking Codex to implement anything.
 
-## Current Phase 2 boundary
+## Completed Phase 2 boundary
 
-Parts 1 through 4 now implement persistence, password security, generic
+Parts 1 through 5 implement persistence, password security, generic
 login-attempt orchestration, enumeration-cost mitigation, bounded authentication
 context, the application-side audit-emission boundary, HTTP login, and secure
 server-side authentication sessions, plus encrypted service-layer TOTP enrollment,
-verification, replay protection, and disablement. Authentication state contains
+verification, replay protection, and disablement, plus short-lived hash-only MFA
+challenges and final TOTP-gated session issuance. Authentication state contains
 identity only and creates no authorization state.
 
-Remaining Phase 2 work includes:
+Deferred work includes safe HTTP MFA enrollment/disablement with dedicated CSRF
+protection, recovery codes and other factors, persistent audit storage, abuse
+controls, deployment, and the future authorized account-disable workflow with
+transactional bulk session revocation. Current per-request session validation
+already denies disabled accounts immediately.
 
-1. Part 5 integration of password authentication, MFA challenge state, and session
-   issuance. The current `/auth/login` behavior is intentionally unchanged.
-2. The future authorized account-disable workflow with transactional bulk session
-   revocation; per-request validation already denies disabled accounts.
-3. Persistent audit ownership and later abuse-control ownership.
-4. A dedicated CSRF mechanism before authenticated state-changing browser
-   operations expand beyond logout.
-
-HTTP MFA enrollment/disablement also remains deferred until a dedicated CSRF
-strategy establishes a safe browser boundary. Phase 2 must not infer authorization
-from password or TOTP authentication success.
+Phase 2 is **COMPLETE**. Phase 3 is **NOT STARTED**. Phase 3 must begin with a
+small centralized authorization slice and must never infer permission from
+password, TOTP, challenge, or session success alone.

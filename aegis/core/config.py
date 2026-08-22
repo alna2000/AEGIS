@@ -20,6 +20,11 @@ class Settings(BaseSettings):
         pattern=r"^[A-Za-z0-9_-]{1,64}$",
     )
     session_cookie_secure: bool = False
+    mfa_challenge_lifetime_seconds: int = Field(default=5 * 60, ge=60, le=10 * 60)
+    mfa_challenge_cookie_name: str = Field(
+        default="aegis_mfa_challenge",
+        pattern=r"^[A-Za-z0-9_-]{1,64}$",
+    )
     mfa_encryption_key: SecretStr | None = Field(default=None, repr=False)
     mfa_encryption_key_id: str = Field(
         default="v1",
@@ -40,6 +45,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 "secure session cookies are required outside development and test"
             )
+        if self.mfa_challenge_cookie_name == self.session_cookie_name:
+            raise ValueError("session and MFA challenge cookie names must differ")
         return self
 
 

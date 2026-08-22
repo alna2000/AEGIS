@@ -123,6 +123,50 @@ def test_authentication_migrations_upgrade_and_downgrade(tmp_path: Path) -> None
         index["name"]: index for index in inspector.get_indexes("mfa_credentials")
     }
     assert mfa_indexes["uq_mfa_credentials_non_disabled_totp_user"]["unique"] == 1
+    assert "mfa_challenges" in inspector.get_table_names()
+    assert {
+        column["name"] for column in inspector.get_columns("mfa_challenges")
+    } == {
+        "id",
+        "user_id",
+        "token_hash",
+        "created_at",
+        "expires_at",
+        "consumed_at",
+        "revoked_at",
+        "source_ip",
+        "user_agent",
+    }
+    challenge_unique_columns = {
+        tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("mfa_challenges")
+    }
+    assert ("token_hash",) in challenge_unique_columns
+    challenge_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("mfa_challenges")
+    }
+    assert {
+        "ck_mfa_challenges_token_hash_format",
+        "ck_mfa_challenges_expiry_after_creation",
+        "ck_mfa_challenges_consumed_after_creation",
+        "ck_mfa_challenges_revoked_after_creation",
+        "ck_mfa_challenges_single_terminal_state",
+    } <= challenge_checks
+    challenge_foreign_keys = inspector.get_foreign_keys("mfa_challenges")
+    assert len(challenge_foreign_keys) == 1
+    assert challenge_foreign_keys[0]["referred_table"] == "users"
+    challenge_indexes = {
+        index["name"]: tuple(index["column_names"])
+        for index in inspector.get_indexes("mfa_challenges")
+    }
+    assert challenge_indexes["ix_mfa_challenges_expires_at"] == ("expires_at",)
+    assert challenge_indexes["ix_mfa_challenges_user_lifecycle"] == (
+        "user_id",
+        "consumed_at",
+        "revoked_at",
+        "expires_at",
+    )
     engine.dispose()
 
     command.downgrade(config, "base")

@@ -3,13 +3,14 @@
 AEGIS is a fictional cybersecurity learning environment. All future identities,
 organizations, intelligence records, classifications, and events will be synthetic.
 
-**Phase 1 - Foundation & Architecture** is complete. **Phase 2 - Authentication
-& 2FA** is in progress. Parts 1-4 implement user/password persistence, generic
+**Phase 1 - Foundation & Architecture** and **Phase 2 - Authentication & 2FA**
+are complete. Phase 2 implements user/password persistence, generic
 login-attempt security and non-persistent credential-audit logging, HTTP login,
 finite hash-only server-side sessions, and the encrypted service-layer TOTP
-credential foundation. Authentication proves identity only; final login/MFA
-integration and all authorization remain deferred. PostgreSQL remains the
-application target and is not provisioned by this repository.
+credential foundation plus short-lived hash-only MFA challenges and final TOTP
+session issuance. **Phase 3 - Authorization & Classified Records has not
+started.** Authentication proves identity only and grants no authorization.
+PostgreSQL remains the application target and is not provisioned by this repository.
 
 ## Local setup (Windows PowerShell)
 
@@ -39,6 +40,9 @@ file. Generate a dedicated Fernet key locally (for example with
 credential, or session token. The tracked `.env.example` contains only an empty
 placeholder. `AEGIS_MFA_ENCRYPTION_KEY_ID` is a non-secret version label that
 defaults to `v1` and is stored beside ciphertext for future rotation.
+MFA challenges default to five minutes and may be configured from 60 through 600
+seconds with `AEGIS_MFA_CHALLENGE_LIFETIME_SECONDS`. Their separate cookie name
+defaults to `aegis_mfa_challenge`; it must differ from the normal session cookie.
 
 Run the tests:
 
@@ -69,22 +73,40 @@ The local API will be available at `http://127.0.0.1:8000`.
 | --- | --- | --- |
 | `GET` | `/` | AEGIS development status |
 | `GET` | `/health` | Minimal process health check |
-| `POST` | `/auth/login` | Verify a synthetic username/password and create a server-side session |
+| `POST` | `/auth/login` | Verify a synthetic password; issue a session or require TOTP |
+| `POST` | `/auth/mfa/totp/verify` | Complete a valid password-issued MFA challenge with TOTP |
 | `GET` | `/auth/me` | Return safe identity for a usable current session |
 | `POST` | `/auth/logout` | Revoke the current server-side session and clear its cookie |
 
 For local manual testing, first apply migrations and create an active synthetic
-user through a trusted local database/bootstrap workflow; no public account
-creation endpoint exists. Start Uvicorn, use one in-memory HTTP client/session to
-`POST /auth/login`, `GET /auth/me`, `POST /auth/logout`, then confirm a final
-`GET /auth/me` returns `401`. Do not place session credentials in URLs, JSON,
-localStorage, logs, or a checked-in cookie jar.
+user through a trusted local database/bootstrap workflow; no public account or
+MFA enrollment endpoint exists. Keep one in-memory HTTP client/session so cookies
+are handled automatically. Use only synthetic values or placeholders:
+
+```powershell
+$aegisWeb = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$loginBody = @{username='<SYNTHETIC_USERNAME>'; password='<SYNTHETIC_PASSWORD>'} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/auth/login' -ContentType 'application/json' -Body $loginBody -WebSession $aegisWeb
+```
+
+If the response reports `mfa_required: true`, obtain the current code from the
+synthetic account's authenticator and submit it without repeating the password:
+
+```powershell
+$mfaBody = @{code='<CURRENT_TOTP_CODE>'} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/auth/mfa/totp/verify' -ContentType 'application/json' -Body $mfaBody -WebSession $aegisWeb
+Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:8000/auth/me' -WebSession $aegisWeb
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/auth/logout' -WebSession $aegisWeb
+```
+
+Users without enabled TOTP receive the normal session directly from `/auth/login`.
+Do not place passwords, TOTP codes, session credentials, challenge credentials,
+or provisioning URIs in URLs, logs, source files, localStorage, or a checked-in
+cookie jar.
 
 `SameSite=Strict` supplies useful baseline CSRF protection but is not a complete
-CSRF design. Authenticated state-changing browser functionality must not expand
-beyond the reviewed idempotent logout endpoint until dedicated CSRF protection is
-implemented. TOTP enrollment and verification intentionally have no HTTP routes
-in Part 4 because dedicated CSRF protection is not yet implemented. `/auth/login`
-still does not require TOTP. Final login/MFA integration, authorization,
-classified records, abuse protection, frontend work, persistent audit storage,
-and deployment remain unimplemented.
+CSRF design. The reviewed pre-authentication MFA completion also requires a
+current TOTP proof, and logout is idempotent. MFA enrollment/disablement and future
+authenticated browser state changes must not be exposed until dedicated CSRF
+protection is designed. Authorization, classified records, frontend work, abuse
+protection, persistent audit storage, and deployment remain unimplemented.

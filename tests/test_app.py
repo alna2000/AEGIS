@@ -1,6 +1,8 @@
 """Tests for the minimal AEGIS application."""
 
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
+import pytest
 
 from aegis.core.config import Settings, get_settings
 from aegis.main import app
@@ -32,3 +34,12 @@ def test_health_reports_ok() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_session_and_mfa_challenge_cookie_names_must_be_distinct() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            session_cookie_name="same_cookie",
+            mfa_challenge_cookie_name="same_cookie",
+            _env_file=None,
+        )

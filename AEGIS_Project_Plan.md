@@ -27,18 +27,20 @@ learning path or stronger security approach is discovered.
 
 Phase 1 is complete: Part 1 established the verified minimal FastAPI foundation,
 Part 2 designed the security architecture, and Part 3 designed the database
-architecture. Phase 2 - Authentication & 2FA is now in progress. Part 1
-implements the minimum user persistence, migration, password-security, and
-service boundary. Part 2 implements generic login-attempt orchestration,
+architecture. Phase 2 - Authentication & 2FA is complete. Part 1 implemented
+minimum user persistence, migration, password security, and its service boundary.
+Part 2 implemented generic login-attempt orchestration,
 enumeration-cost mitigation, bounded request context, and a required
-credential-verification logging interface. Part 3 implements HTTP login,
+credential-verification logging interface. Part 3 implemented HTTP login,
 hash-only server-side sessions, secure cookies, centralized session validation,
 current-identity
-resolution, and logout/revocation. Part 4 implements encrypted TOTP credential
+resolution, and logout/revocation. Part 4 implemented encrypted TOTP credential
 persistence, service-layer enrollment and confirmation, a narrow verification
 window, counter-based replay protection, disablement, and controlled TOTP audit
-semantics. Final password-login MFA integration remains deferred to Part 5;
-authentication state grants no authorization.
+semantics. Part 5 completed password-to-MFA challenge integration, hash-only
+short-lived challenge state, final session issuance, bypass/replay/transaction
+tests, and the Phase 2 security review. Phase 3 - Authorization & Classified
+Records has not started. Authentication state grants no authorization.
 
 ## Phase Completion and Handover Protocol
 

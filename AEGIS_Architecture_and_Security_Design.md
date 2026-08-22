@@ -552,6 +552,22 @@ environment-configured URL-safe Base64 32-byte key. Only a non-secret key ID and
 randomized ciphertext are persisted. Missing, invalid, mismatched, modified, or
 wrong-key material fails closed.
 
+#### `mfa_challenges`
+
+`mfa_challenges` contains an internal UUID, user foreign key, unique SHA-256
+challenge-token hash, UTC creation and expiry timestamps, mutually exclusive
+consumption/revocation timestamps, and optional bounded request IP/user-agent
+context. Raw challenge tokens are never persisted. Useful lifecycle and expiry
+indexes support lookup and later retention work.
+
+The default lifetime is five minutes and configuration is bounded from one to ten
+minutes. A challenge is usable only for its password-verified user while the
+account remains active, `created_at <= now < expires_at`, and both terminal
+timestamps are null. Resolution uses an explicit inner join and PostgreSQL row
+locks for both challenge and user state; consumption, TOTP
+counter advancement, old-session revocation, and new-session creation occur in
+one caller-owned transaction.
+
 #### `audit_events`
 
 | Field | Purpose and constraints |
@@ -962,3 +978,58 @@ deliberately deferred. `/auth/login` still performs password authentication and
 session issuance without requiring TOTP. Part 5 owns the password-to-MFA challenge
 and final session-issuance integration. No authorization or Phase 3 behavior is
 introduced.
+
+## Phase 2 Part 5 implementation status and security review
+
+Phase 2 Part 5 completes the authentication flow without introducing
+authorization:
+
+- `/auth/login` still performs the centralized password decision. A user without
+  enabled TOTP receives a fresh normal session as before. A user with enabled
+  TOTP receives `authenticated=false`, `mfa_required=true`, and only a separate
+  short-lived challenge cookie; password success alone creates no normal session.
+- Each challenge token contains 256 random bits encoded as 43 URL-safe Base64
+  characters. PostgreSQL stores only its unique lowercase SHA-256 hash. The
+  challenge cookie is separate from `aegis_session`, `HttpOnly`,
+  `SameSite=Strict`, scoped to `/auth`, and `Secure` outside explicit local/test
+  environments. It is never returned in JSON, URLs, logs, or object repr.
+- `POST /auth/mfa/totp/verify` accepts only one repr-suppressed code field. The
+  server resolves the cookie to its already password-verified user; usernames and
+  passwords are not resubmitted. Missing, malformed, random, expired, revoked,
+  consumed, wrong-user, disabled-account, disabled-credential, wrong-code, and
+  replayed state all fail with the same small public MFA response and no session.
+- Successful completion verifies TOTP through the Part 4 service, advances the
+  last accepted counter, consumes the locked challenge, revokes a known old
+  normal session, creates entirely fresh normal-session material, and commits all
+  database changes together. Only after commit does the response clear the
+  challenge cookie and issue the normal session cookie. A persistence or commit
+  failure rolls back every database transition and emits no successful cookie.
+- A newer password login revokes the user's earlier open challenges. Logout
+  revokes both a presented session and an in-progress challenge and clears both
+  cookies. SQLite tests exercise deterministic lifecycle semantics; actual
+  concurrent PostgreSQL requests were not executed, so concurrency assurance is
+  based on reviewed `SELECT ... FOR UPDATE OF` transaction design rather than a
+  claimed live concurrency test.
+- `PASSWORD_AUTH_SUCCESS` continues to mean only password verification and
+  `TOTP_VERIFICATION_SUCCESS` only factor verification. Those logging calls may
+  precede a later database rollback. No `LOGIN_SUCCESS` event was added, and the
+  current sink remains ordinary non-persistent, non-transactional logging rather
+  than immutable audit evidence.
+
+The Phase 2 security review covered Argon2id hashing and upgrade behavior,
+password bounds and error sanitization, enumeration-cost mitigation, disabled
+accounts, session entropy/hash-only storage/expiry/revocation/fixation/cookies,
+Fernet encryption and external key handling, the +/-1 TOTP window, TOTP counter
+replay, challenge entropy/hash-only storage/expiry/single use/user binding,
+generic HTTP failures, secret-free audit structures, and commit rollback.
+Negative tests cover each material boundary.
+
+`SameSite=Strict` is still not claimed as complete long-term CSRF protection.
+The MFA completion route is a pre-authentication transition that additionally
+requires possession of a current TOTP code; logout is idempotent. MFA enrollment,
+credential disablement, account administration, and future authenticated browser
+state changes must not be exposed until a dedicated CSRF design is implemented.
+
+Phase 2 is complete. Phase 3 authorization and classified-record implementation
+have not started. Authentication establishes identity only and never grants
+roles, clearance, compartments, record access, or administrative authority.

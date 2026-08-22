@@ -30,6 +30,11 @@ def create_app() -> FastAPI:
                 status_code=401,
                 content={"detail": "Invalid username or password"},
             )
+        if request.url.path == "/auth/mfa/totp/verify":
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "MFA verification failed"},
+            )
         return await request_validation_exception_handler(request, exc)
 
     return application

@@ -93,6 +93,10 @@ class User(Base):
         back_populates="user",
         passive_deletes=True,
     )
+    mfa_challenges: Mapped[list[MfaChallenge]] = relationship(
+        back_populates="user",
+        passive_deletes=True,
+    )
 
     @property
     def is_usable_for_authentication(self) -> bool:
@@ -241,3 +245,57 @@ class MfaCredential(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="mfa_credentials")
+
+
+class MfaChallenge(Base):
+    """Hash-only, short-lived password-verified MFA challenge state."""
+
+    __tablename__ = "mfa_challenges"
+    __table_args__ = (
+        CheckConstraint(
+            "length(token_hash) = 64 AND token_hash = lower(token_hash)",
+            name="ck_mfa_challenges_token_hash_format",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="ck_mfa_challenges_expiry_after_creation",
+        ),
+        CheckConstraint(
+            "consumed_at IS NULL OR consumed_at >= created_at",
+            name="ck_mfa_challenges_consumed_after_creation",
+        ),
+        CheckConstraint(
+            "revoked_at IS NULL OR revoked_at >= created_at",
+            name="ck_mfa_challenges_revoked_after_creation",
+        ),
+        CheckConstraint(
+            "consumed_at IS NULL OR revoked_at IS NULL",
+            name="ck_mfa_challenges_single_terminal_state",
+        ),
+        Index(
+            "ix_mfa_challenges_user_lifecycle",
+            "user_id",
+            "consumed_at",
+            "revoked_at",
+            "expires_at",
+        ),
+        Index("ix_mfa_challenges_expires_at", "expires_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    source_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="mfa_challenges")

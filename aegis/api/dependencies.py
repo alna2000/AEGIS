@@ -9,12 +9,21 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session, sessionmaker
 
 from aegis.core.config import Settings, get_settings
-from aegis.db.repositories import SessionRepository, UserRepository
+from aegis.db.repositories import (
+    MfaChallengeRepository,
+    MfaCredentialRepository,
+    SessionRepository,
+    UserRepository,
+)
 from aegis.db.session import create_database_engine, create_session_factory
 from aegis.security.audit_sinks import LoggingAuthenticationAuditSink
 from aegis.security.authentication_events import AuthenticationAuditSink
 from aegis.security.passwords import PasswordService
+from aegis.security.mfa_encryption import MfaKeyConfigurationError, MfaSecretCipher
+from aegis.security.totp import TotpService
 from aegis.services.authentication import AuthenticatedPrincipal, AuthenticationService
+from aegis.services.mfa import MfaService
+from aegis.services.mfa_challenges import MfaChallengeService
 from aegis.services.sessions import SessionService
 
 
@@ -65,6 +74,51 @@ def get_session_service(
     return SessionService(
         SessionRepository(database_session),
         lifetime=timedelta(seconds=settings.session_lifetime_seconds),
+    )
+
+
+def build_mfa_service(
+    database_session: Session,
+    settings: Settings,
+    audit_sink: AuthenticationAuditSink,
+) -> MfaService:
+    """Build MFA verification only when its external key is valid."""
+
+    return MfaService(
+        MfaCredentialRepository(database_session),
+        MfaSecretCipher(
+            settings.mfa_encryption_key,
+            settings.mfa_encryption_key_id,
+        ),
+        TotpService(),
+        audit_sink,
+    )
+
+
+def get_mfa_service(
+    database_session: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    audit_sink: Annotated[
+        AuthenticationAuditSink, Depends(get_authentication_audit_sink)
+    ],
+) -> MfaService:
+    try:
+        return build_mfa_service(database_session, settings, audit_sink)
+    except MfaKeyConfigurationError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service unavailable",
+        ) from None
+
+
+def get_mfa_challenge_service(
+    database_session: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MfaChallengeService:
+    return MfaChallengeService(
+        MfaChallengeRepository(database_session),
+        MfaCredentialRepository(database_session),
+        lifetime=timedelta(seconds=settings.mfa_challenge_lifetime_seconds),
     )
 
 
