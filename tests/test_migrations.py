@@ -86,6 +86,43 @@ def test_authentication_migrations_upgrade_and_downgrade(tmp_path: Path) -> None
         "revoked_at",
         "expires_at",
     )
+    assert "mfa_credentials" in inspector.get_table_names()
+    assert {
+        column["name"] for column in inspector.get_columns("mfa_credentials")
+    } == {
+        "id",
+        "user_id",
+        "method_type",
+        "encrypted_secret",
+        "encryption_key_id",
+        "enabled",
+        "created_at",
+        "last_used_at",
+        "disabled_at",
+        "last_accepted_counter",
+    }
+    mfa_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("mfa_credentials")
+    }
+    assert {
+        "ck_mfa_credentials_method_type",
+        "ck_mfa_credentials_encrypted_secret_not_empty",
+        "ck_mfa_credentials_key_id_length",
+        "ck_mfa_credentials_enabled_not_disabled",
+        "ck_mfa_credentials_last_used_after_creation",
+        "ck_mfa_credentials_disabled_after_creation",
+        "ck_mfa_credentials_counter_nonnegative",
+        "ck_mfa_credentials_usage_state_complete",
+    } <= mfa_checks
+    mfa_foreign_keys = inspector.get_foreign_keys("mfa_credentials")
+    assert len(mfa_foreign_keys) == 1
+    assert mfa_foreign_keys[0]["referred_table"] == "users"
+    assert mfa_foreign_keys[0]["constrained_columns"] == ["user_id"]
+    mfa_indexes = {
+        index["name"]: index for index in inspector.get_indexes("mfa_credentials")
+    }
+    assert mfa_indexes["uq_mfa_credentials_non_disabled_totp_user"]["unique"] == 1
     engine.dispose()
 
     command.downgrade(config, "base")

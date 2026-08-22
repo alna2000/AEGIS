@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +20,11 @@ class Settings(BaseSettings):
         pattern=r"^[A-Za-z0-9_-]{1,64}$",
     )
     session_cookie_secure: bool = False
+    mfa_encryption_key: SecretStr | None = Field(default=None, repr=False)
+    mfa_encryption_key_id: str = Field(
+        default="v1",
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

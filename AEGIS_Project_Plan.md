@@ -34,8 +34,11 @@ enumeration-cost mitigation, bounded request context, and a required
 credential-verification logging interface. Part 3 implements HTTP login,
 hash-only server-side sessions, secure cookies, centralized session validation,
 current-identity
-resolution, and logout/revocation. MFA/TOTP remains deferred; authentication
-state grants no authorization.
+resolution, and logout/revocation. Part 4 implements encrypted TOTP credential
+persistence, service-layer enrollment and confirmation, a narrow verification
+window, counter-based replay protection, disablement, and controlled TOTP audit
+semantics. Final password-login MFA integration remains deferred to Part 5;
+authentication state grants no authorization.
 
 ## Phase Completion and Handover Protocol
 

@@ -5,7 +5,7 @@ Project: AEGIS - Classified Intelligence Access System
 Completed Phase: Phase 1 - Foundation & Architecture
 Status: COMPLETE
 Current Phase: Phase 2 - Authentication & 2FA
-Current Part: Part 3 - HTTP Login & Secure Server-Side Sessions
+Current Part: Part 4 - TOTP/MFA Foundation
 Status: IN PROGRESS
 ```
 
@@ -78,11 +78,35 @@ mean that the planned security controls are operational.
 - Precise audit semantics: credential events never claim durable session
   establishment. The logging sink is non-transactional; committed PostgreSQL
   session state and cookie issuance are separate lifecycle facts.
+- Reviewed `mfa_credentials` migration and typed model with encrypted secret,
+  non-secret key ID, pending/enabled/disabled lifecycle fields, and last accepted
+  counter. A partial unique index permits one non-disabled TOTP credential per
+  user while preserving disabled history.
+- Maintained `cryptography` Fernet authenticated encryption with a separately
+  configured, secret-represented key and no hard-coded fallback. Missing, invalid,
+  mismatched, wrong-key, or tampered material fails closed.
+- Maintained PyOTP generation using a fresh 160-bit Base32 secret, issuer `AEGIS`,
+  canonical synthetic username, and standard encoded `otpauth://` provisioning
+  URI. Secret-bearing enrollment fields suppress their representations.
+- Service-layer TOTP enrollment starts pending and becomes enabled only after
+  valid proof. Pending and disabled credentials fail normal verification, and
+  disablement preserves metadata without hard deletion.
+- SHA-1, six digits, 30-second periods, and an exactly +/-1-step clock window,
+  with deterministic injected time and strict ASCII-decimal code validation.
+- Same-step/older-step replay prevention through the persisted last accepted
+  counter plus row locking in caller-owned PostgreSQL transactions. Failed
+  verification never advances replay state.
+- Controlled `TOTP_VERIFICATION_SUCCESS` and `TOTP_VERIFICATION_FAILURE` audit
+  semantics containing no secret, entered code, encryption key, or provisioning
+  URI.
+- Deliberate service-only HTTP boundary: no new authenticated state-changing MFA
+  routes were added before a dedicated CSRF design. `/auth/login` remains the
+  existing password/session workflow and does not yet require MFA.
 
 Latest verification with Python 3.13.15:
 
 ```text
-pytest: 52 passed, 2 warnings in 7.12s
+pytest: 73 passed, 2 warnings in 7.79s
 GET /: {"name":"AEGIS","status":"Development","api":"Available"}
 GET /health: {"status":"ok"}
 git diff --check: exit 0, no whitespace errors; LF-to-CRLF notices emitted
@@ -96,10 +120,11 @@ remaining PostgreSQL entities and relationships, session storage, MFA storage,
 audit events, deletion behavior, database privilege separation, and optional RLS
 defense in depth.
 
-PostgreSQL infrastructure, MFA/TOTP, authorization enforcement, classified
-records, frontend, bot protection, persistent audit storage, and deployment
-remain unimplemented. Department and clearance relationships will extend the
-existing user model later; they are not needed for authentication state.
+PostgreSQL infrastructure, final password-login MFA integration, authorization
+enforcement, classified records, frontend, bot protection, persistent audit
+storage, and deployment remain unimplemented. Department and clearance
+relationships will extend the existing user model later; they are not needed for
+authentication state.
 
 ## Important security decisions
 
@@ -136,13 +161,16 @@ existing user model later; they are not needed for authentication state.
 - `aegis/api/routes/system.py` - foundation status and health endpoints.
 - `aegis/core/config.py` - environment-based settings.
 - `aegis/db/` - typed user model, engine/session setup, and user repository.
-- `aegis/security/` - identity normalization and Argon2id password handling.
+- `aegis/security/` - identity normalization, Argon2id password handling,
+  authenticated MFA-secret encryption, and centralized TOTP rules.
 - `aegis/security/authentication_events.py` - bounded request context, controlled
   credential-verification event definitions, and audit-sink/error boundary.
 - `aegis/services/authentication.py` - fail-closed password-authentication
   and login-attempt orchestration with no authorization behavior.
 - `aegis/services/sessions.py` - centralized token generation, hashing, session
   creation, resolution, usability, and revocation.
+- `aegis/services/mfa.py` - centralized TOTP enrollment, confirmation,
+  verification, replay protection, and disablement.
 - `aegis/api/routes/authentication.py` and `aegis/api/dependencies.py` - HTTP
   login/session endpoints, transaction ownership, and central dependencies.
 - `tests/` - foundation, persistence, migration, password, and authentication
@@ -192,6 +220,8 @@ Phase 2 Part 2 is implemented, verified, and accepted for its Git/GitHub
 checkpoint at `985f82e` (`Complete AEGIS Phase 2 login security boundary`).
 Phase 2 Part 3 is implemented, verified, and accepted for its Git/GitHub
 checkpoint. Git history is authoritative for the resulting commit identifier.
+Phase 2 Part 4 is implemented, verified, and accepted for its Git/GitHub
+checkpoint. Git history is authoritative for the resulting commit identifier.
 
 Deployment status is **local development only**. PostgreSQL and all production or
 public deployment infrastructure remain unconfigured.
@@ -223,21 +253,23 @@ before asking Codex to implement anything.
 
 ## Current Phase 2 boundary
 
-Parts 1 through 3 now implement persistence, password security, generic
+Parts 1 through 4 now implement persistence, password security, generic
 login-attempt orchestration, enumeration-cost mitigation, bounded authentication
 context, the application-side audit-emission boundary, HTTP login, and secure
-server-side authentication sessions. Authentication state contains identity only
-and creates no authorization state.
+server-side authentication sessions, plus encrypted service-layer TOTP enrollment,
+verification, replay protection, and disablement. Authentication state contains
+identity only and creates no authorization state.
 
 Remaining Phase 2 work includes:
 
-1. TOTP/MFA design and implementation after the password/session boundary is
-   accepted.
+1. Part 5 integration of password authentication, MFA challenge state, and session
+   issuance. The current `/auth/login` behavior is intentionally unchanged.
 2. The future authorized account-disable workflow with transactional bulk session
    revocation; per-request validation already denies disabled accounts.
 3. Persistent audit ownership and later abuse-control ownership.
 4. A dedicated CSRF mechanism before authenticated state-changing browser
    operations expand beyond logout.
 
-TOTP/MFA follows only after password authentication is established and verified.
-Phase 2 must not infer authorization from authentication success.
+HTTP MFA enrollment/disablement also remains deferred until a dedicated CSRF
+strategy establishes a safe browser boundary. Phase 2 must not infer authorization
+from password or TOTP authentication success.

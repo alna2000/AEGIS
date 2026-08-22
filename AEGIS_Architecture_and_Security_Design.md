@@ -538,16 +538,19 @@ below.
 #### `mfa_credentials`
 
 `mfa_credentials` contains `id`, `user_id`, constrained `method_type`,
-`secret_encrypted`, an encryption key/version identifier, `enabled`, `created_at`,
-`last_used_at`, and optional `disabled_at`. A v1 constraint should prevent more
-than one active credential of the same method type per user unless Phase 2 defines
-a tested multi-device workflow.
+`encrypted_secret`, `encryption_key_id`, `enabled`, `created_at`, `last_used_at`,
+optional `disabled_at`, and optional `last_accepted_counter`. Phase 2 Part 4
+implements a partial unique index allowing only one non-disabled TOTP credential
+per user. Disabled rows remain as lifecycle history and do not prevent a later
+fresh pending enrollment.
 
 TOTP secrets are recoverable operational secrets and therefore require encryption,
 not password hashing. Password verifiers require a password-hashing algorithm and
 are not decryptable. TOTP secrets must never be plaintext in the database, logs,
-or source control. Encryption and key management details belong to Phase 2; keys
-must remain outside the database and repository.
+or source control. Part 4 uses Fernet authenticated encryption with an independent
+environment-configured URL-safe Base64 32-byte key. Only a non-secret key ID and
+randomized ciphertext are persisted. Missing, invalid, mismatched, modified, or
+wrong-key material fails closed.
 
 #### `audit_events`
 
@@ -563,8 +566,10 @@ must remain outside the database and repository.
 | `metadata` | Optional allowlisted structured metadata; never an unrestricted dump. |
 | `created_at` | Required immutable event timestamp. |
 
-Planned event types include `PASSWORD_AUTH_SUCCESS`, `PASSWORD_AUTH_FAILURE`,
-`MFA_SUCCESS`, `MFA_FAILURE`, `ACCESS_ALLOWED`, `ACCESS_DENIED`, `ROLE_CHANGED`,
+Controlled authentication event types now include `PASSWORD_AUTH_SUCCESS`,
+`PASSWORD_AUTH_FAILURE`, `TOTP_VERIFICATION_SUCCESS`, and
+`TOTP_VERIFICATION_FAILURE`. Planned later event types include `ACCESS_ALLOWED`,
+`ACCESS_DENIED`, `ROLE_CHANGED`,
 `CLEARANCE_CHANGED`, `COMPARTMENT_CHANGED`, `ACCOUNT_DISABLED`, `ADMIN_ACTION`,
 and `BOT_SUSPECTED`. The exact controlled vocabulary will be defined with the
 owning feature.
@@ -909,7 +914,51 @@ Until a dedicated browser CSRF design is implemented, authenticated state-changi
 routes must not expand beyond the reviewed idempotent logout operation. The future
 authorized account-disable workflow must revoke all active sessions in the same
 transaction as account disablement; per-request current-account validation is the
-implemented interim guarantee. MFA/TOTP, authorization, roles, clearance,
+implemented interim guarantee. Authorization, roles, clearance,
 departments, compartments, classified records, frontend behavior, abuse controls,
 persistent audit storage, and deployment remain designed or deferred rather than
 implemented.
+
+## Phase 2 Part 4 implementation status
+
+Phase 2 Part 4 implements the TOTP/MFA foundation without changing password
+login or creating authorization state:
+
+- The `mfa_credentials` migration and typed model store UUID identity, user
+  ownership, constrained `TOTP` method type, Fernet ciphertext, a non-secret key
+  ID, pending/enabled/disabled lifecycle timestamps, and the last accepted TOTP
+  counter. Plaintext secrets and QR images are never persisted.
+- `AEGIS_MFA_ENCRYPTION_KEY` is optional at general application startup but is
+  required when constructing MFA functionality. It must be an independently
+  supplied Fernet key and is represented as a secret setting. There is no
+  hard-coded fallback. `AEGIS_MFA_ENCRYPTION_KEY_ID` defaults to the non-secret
+  identifier `v1`; a mismatched ID fails decryption closed.
+- `cryptography` Fernet provides randomized authenticated encryption. Tampering,
+  malformed ciphertext, a wrong key, or an unexpected key ID cannot yield a
+  usable secret and produces only a controlled non-secret failure.
+- PyOTP generates a fresh 160-bit Base32 secret and an `otpauth://` URI using
+  issuer `AEGIS` and the canonical synthetic username, with standard URI
+  encoding and no internal database identifier. Enrollment returns the plaintext
+  secret and secret-bearing URI once in fields excluded from object repr.
+- A new credential starts pending (`enabled=false`, `disabled_at=null`). Only a
+  valid current TOTP proof enables it. Normal factor verification refuses pending
+  and disabled credentials. Disablement sets lifecycle metadata, retains the
+  encrypted row, and permits a later independently generated pending credential.
+- TOTP parameters are SHA-1, six digits, and 30-second steps. Verification accepts
+  only the current counter or exactly one adjacent counter in either direction
+  (+/-30 seconds). Codes must be six ASCII decimal digits, and tests inject time.
+- Every accepted confirmation or normal verification stores its counter and
+  timestamp. The credential row is selected `FOR UPDATE` for PostgreSQL transaction
+  serialization, and any counter less than or equal to the last accepted counter
+  is rejected. Failed attempts do not change replay state.
+- Required non-persistent audit events use the precise names
+  `TOTP_VERIFICATION_SUCCESS` and `TOTP_VERIFICATION_FAILURE`. Their allowlisted
+  structure contains no secret, entered code, encryption key, or provisioning URI.
+
+No Part 4 HTTP enrollment, confirmation, disable, or verification routes were
+added. `SameSite=Strict` remains only a baseline and the project has no dedicated
+CSRF mechanism, so expanding authenticated state-changing browser endpoints was
+deliberately deferred. `/auth/login` still performs password authentication and
+session issuance without requiring TOTP. Part 5 owns the password-to-MFA challenge
+and final session-issuance integration. No authorization or Phase 3 behavior is
+introduced.

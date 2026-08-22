@@ -1,9 +1,11 @@
 """Small repository boundary for authentication persistence."""
 
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from aegis.db.models import User, UserSession
+from aegis.db.models import MfaCredential, User, UserSession
 from aegis.security.identity import InvalidIdentity, normalize_username
 
 
@@ -61,4 +63,33 @@ class SessionRepository:
     def flush(self) -> None:
         """Flush session changes while leaving commit ownership to the caller."""
 
+        self._session.flush()
+
+
+class MfaCredentialRepository:
+    """Persist and lock the current non-disabled TOTP credential."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, credential: MfaCredential) -> MfaCredential:
+        self._session.add(credential)
+        return credential
+
+    def get_current_totp(
+        self,
+        user_id: uuid.UUID,
+        *,
+        for_update: bool = False,
+    ) -> MfaCredential | None:
+        statement = select(MfaCredential).where(
+            MfaCredential.user_id == user_id,
+            MfaCredential.method_type == "TOTP",
+            MfaCredential.disabled_at.is_(None),
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return self._session.scalar(statement)
+
+    def flush(self) -> None:
         self._session.flush()

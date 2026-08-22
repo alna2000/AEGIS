@@ -5,7 +5,17 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, Uuid
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Uuid,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from aegis.db.base import Base
@@ -79,6 +89,10 @@ class User(Base):
         back_populates="user",
         passive_deletes=True,
     )
+    mfa_credentials: Mapped[list[MfaCredential]] = relationship(
+        back_populates="user",
+        passive_deletes=True,
+    )
 
     @property
     def is_usable_for_authentication(self) -> bool:
@@ -149,3 +163,81 @@ class UserSession(Base):
     user_agent: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class MfaCredential(Base):
+    """Encrypted, lifecycle-aware TOTP credential state."""
+
+    __tablename__ = "mfa_credentials"
+    __table_args__ = (
+        CheckConstraint(
+            "method_type = 'TOTP'",
+            name="ck_mfa_credentials_method_type",
+        ),
+        CheckConstraint(
+            "length(encrypted_secret) > 0",
+            name="ck_mfa_credentials_encrypted_secret_not_empty",
+        ),
+        CheckConstraint(
+            "length(encryption_key_id) BETWEEN 1 AND 64",
+            name="ck_mfa_credentials_key_id_length",
+        ),
+        CheckConstraint(
+            "enabled = false OR disabled_at IS NULL",
+            name="ck_mfa_credentials_enabled_not_disabled",
+        ),
+        CheckConstraint(
+            "last_used_at IS NULL OR last_used_at >= created_at",
+            name="ck_mfa_credentials_last_used_after_creation",
+        ),
+        CheckConstraint(
+            "disabled_at IS NULL OR disabled_at >= created_at",
+            name="ck_mfa_credentials_disabled_after_creation",
+        ),
+        CheckConstraint(
+            "last_accepted_counter IS NULL OR last_accepted_counter >= 0",
+            name="ck_mfa_credentials_counter_nonnegative",
+        ),
+        CheckConstraint(
+            "(last_used_at IS NULL) = (last_accepted_counter IS NULL)",
+            name="ck_mfa_credentials_usage_state_complete",
+        ),
+        Index(
+            "uq_mfa_credentials_non_disabled_totp_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("disabled_at IS NULL AND method_type = 'TOTP'"),
+            sqlite_where=text("disabled_at IS NULL AND method_type = 'TOTP'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    method_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="TOTP", server_default="TOTP"
+    )
+    encrypted_secret: Mapped[str] = mapped_column(String(512), nullable=False)
+    encryption_key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=utc_now
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime(), nullable=True
+    )
+    disabled_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime(), nullable=True
+    )
+    last_accepted_counter: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+
+    user: Mapped[User] = relationship(back_populates="mfa_credentials")

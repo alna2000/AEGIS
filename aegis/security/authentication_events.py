@@ -21,6 +21,8 @@ class AuthenticationEventType(str, Enum):
 
     PASSWORD_AUTH_SUCCESS = "PASSWORD_AUTH_SUCCESS"
     PASSWORD_AUTH_FAILURE = "PASSWORD_AUTH_FAILURE"
+    TOTP_VERIFICATION_SUCCESS = "TOTP_VERIFICATION_SUCCESS"
+    TOTP_VERIFICATION_FAILURE = "TOTP_VERIFICATION_FAILURE"
 
 
 class AuthenticationOutcome(str, Enum):
@@ -36,6 +38,9 @@ class AuthenticationReasonCode(str, Enum):
     CREDENTIALS_REJECTED = "CREDENTIALS_REJECTED"
     ACCOUNT_UNUSABLE = "ACCOUNT_UNUSABLE"
     IDENTIFIER_REJECTED = "IDENTIFIER_REJECTED"
+    TOTP_REJECTED = "TOTP_REJECTED"
+    MFA_CREDENTIAL_UNUSABLE = "MFA_CREDENTIAL_UNUSABLE"
+    TOTP_REPLAYED = "TOTP_REPLAYED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,19 +97,41 @@ class AuthenticationAuditEvent:
     user_agent: str | None = None
 
     def __post_init__(self) -> None:
+        successful_types = {
+            AuthenticationEventType.PASSWORD_AUTH_SUCCESS,
+            AuthenticationEventType.TOTP_VERIFICATION_SUCCESS,
+        }
+        failed_types = {
+            AuthenticationEventType.PASSWORD_AUTH_FAILURE,
+            AuthenticationEventType.TOTP_VERIFICATION_FAILURE,
+        }
         if self.outcome is AuthenticationOutcome.SUCCESS:
-            if self.event_type is not AuthenticationEventType.PASSWORD_AUTH_SUCCESS:
-                raise ValueError(
-                    "successful credential outcome requires PASSWORD_AUTH_SUCCESS"
-                )
+            if self.event_type not in successful_types:
+                raise ValueError("successful credential outcome requires a success event")
             if self.reason_code is not None or self.user_id is None or self.username is None:
                 raise ValueError("successful audit event requires an identified user")
-        elif self.event_type is not AuthenticationEventType.PASSWORD_AUTH_FAILURE:
-            raise ValueError(
-                "failed credential outcome requires PASSWORD_AUTH_FAILURE"
-            )
+        elif self.event_type not in failed_types:
+            raise ValueError("failed credential outcome requires a failure event")
         elif self.reason_code is None:
             raise ValueError("failed audit event requires a controlled reason code")
+        elif self.event_type is AuthenticationEventType.PASSWORD_AUTH_FAILURE and (
+            self.reason_code
+            not in {
+                AuthenticationReasonCode.CREDENTIALS_REJECTED,
+                AuthenticationReasonCode.ACCOUNT_UNUSABLE,
+                AuthenticationReasonCode.IDENTIFIER_REJECTED,
+            }
+        ):
+            raise ValueError("password failure requires a password reason code")
+        elif self.event_type is AuthenticationEventType.TOTP_VERIFICATION_FAILURE:
+            if self.reason_code not in {
+                AuthenticationReasonCode.TOTP_REJECTED,
+                AuthenticationReasonCode.MFA_CREDENTIAL_UNUSABLE,
+                AuthenticationReasonCode.TOTP_REPLAYED,
+            }:
+                raise ValueError("TOTP failure requires a TOTP reason code")
+            if self.user_id is None or self.username is None:
+                raise ValueError("TOTP audit event requires an identified user")
 
 
 class AuthenticationAuditSink(Protocol):

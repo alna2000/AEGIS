@@ -4,12 +4,12 @@ AEGIS is a fictional cybersecurity learning environment. All future identities,
 organizations, intelligence records, classifications, and events will be synthetic.
 
 **Phase 1 - Foundation & Architecture** is complete. **Phase 2 - Authentication
-& 2FA** is in progress. Parts 1-3 implement user/password persistence, generic
+& 2FA** is in progress. Parts 1-4 implement user/password persistence, generic
 login-attempt security and non-persistent credential-audit logging, HTTP login,
-and finite hash-only server-side sessions. Authentication proves identity only;
-MFA/TOTP and all
-authorization remain deferred. PostgreSQL remains the application target and is
-not provisioned by this repository.
+finite hash-only server-side sessions, and the encrypted service-layer TOTP
+credential foundation. Authentication proves identity only; final login/MFA
+integration and all authorization remain deferred. PostgreSQL remains the
+application target and is not provisioned by this repository.
 
 ## Local setup (Windows PowerShell)
 
@@ -32,6 +32,13 @@ password. The default eight-hour session lifetime is configurable with
 development deliberately permits `AEGIS_SESSION_COOKIE_SECURE=false` for plain
 HTTP; every environment other than explicit `development` or `test` refuses to
 start unless secure cookies are enabled.
+
+MFA functionality requires `AEGIS_MFA_ENCRYPTION_KEY` in the untracked `.env`
+file. Generate a dedicated Fernet key locally (for example with
+`Fernet.generate_key()` from `cryptography`) and never reuse a password, database
+credential, or session token. The tracked `.env.example` contains only an empty
+placeholder. `AEGIS_MFA_ENCRYPTION_KEY_ID` is a non-secret version label that
+defaults to `v1` and is stored beside ciphertext for future rotation.
 
 Run the tests:
 
@@ -76,5 +83,8 @@ localStorage, logs, or a checked-in cookie jar.
 `SameSite=Strict` supplies useful baseline CSRF protection but is not a complete
 CSRF design. Authenticated state-changing browser functionality must not expand
 beyond the reviewed idempotent logout endpoint until dedicated CSRF protection is
-implemented. MFA/TOTP, authorization, classified records, abuse protection,
-frontend work, persistent audit storage, and deployment remain unimplemented.
+implemented. TOTP enrollment and verification intentionally have no HTTP routes
+in Part 4 because dedicated CSRF protection is not yet implemented. `/auth/login`
+still does not require TOTP. Final login/MFA integration, authorization,
+classified records, abuse protection, frontend work, persistent audit storage,
+and deployment remain unimplemented.
