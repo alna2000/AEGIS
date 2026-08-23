@@ -7,8 +7,8 @@ Status: COMPLETE
 Current Phase: Phase 3 - Authorization & Classified Records
 Phase 3 Part 1: COMPLETE / CHECKPOINTED
 Phase 3 Part 2: COMPLETE / CHECKPOINTED
-Phase 3 Part 3: IMPLEMENTED / LOCALLY VERIFIED
-Phase 3 next part: NOT STARTED
+Phase 3 Part 3: COMPLETE / CHECKPOINTED
+Phase 3 Part 4: IMPLEMENTED / LOCALLY VERIFIED
 ```
 
 ## What AEGIS is
@@ -403,3 +403,28 @@ generic authorization middleware, CSRF-sensitive state changes, or persistent
 authorization auditing. It does not claim that all classified-record workflows
 are protected. Policy/content TOCTOU must be addressed before concurrent record
 or policy mutation workflows are introduced. Phase 3 remains **IN PROGRESS**.
+
+## Phase 3 Part 4 boundary
+
+Part 4 is implemented and locally verified. `GET /records` returns a sorted
+metadata-only array containing exactly `record_code`, `title`, and
+`classification` for records that the freshly loaded subject is centrally
+allowed to both `SEARCH` and `READ`. A successful subject with no accessible
+records receives `200 []`; administrators and auditors receive the same result
+unless another legitimate intelligence role and all ABAC requirements apply.
+
+The repository loads at most 101 deterministic, content-free policy candidates
+ordered by record code. More than the supported 100 candidates fails closed with
+generic `503` rather than truncating. Titles and classifications are loaded in
+one batch only after dual authorization, using allowed internal UUIDs, and are
+checked for exact UUID, code, classification, and active-lifecycle consistency.
+Malformed policy, evaluator error, repository failure, missing/duplicate/unknown
+metadata, or any partial representation also fails the entire collection with
+generic `503`. No summary, content, totals, pagination, filters, or denial details
+are exposed.
+
+Authorization remains exclusively backend-owned; frontend visibility must never
+be treated as authority. Rich search, record mutations, assignment administration,
+persistent authorization audit storage, and Phase 4 UI remain deferred. Phase 3
+is still **IN PROGRESS** pending Part 4 review and checkpoint; no Phase 3 closure
+artifacts have been created.

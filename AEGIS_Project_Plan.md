@@ -52,9 +52,16 @@ first protected single-record backend READ path: it reloads current subject stat
 authorizes content-free record policy through the existing evaluator, and loads
 an intentionally bounded content representation only after explicit `ALLOW`.
 Missing and inaccessible records share a generic external 404, while evaluator
-and infrastructure failures use a generic 503. Record CRUD/search/list,
-production mutation and activation workflows, assignment workflows, and
-persistent authorization audit storage remain for later Phase 3 parts. Role
+and infrastructure failures use a generic 503. Part 4 implements the bounded
+`GET /records` collection path: current subject facts and content-free candidate
+policies are loaded first, every returned entry requires explicit central SEARCH
+and READ allows, and metadata is batch-loaded only for allowed internal UUIDs.
+The output is sorted record code/title/classification only, with no totals or
+pagination; zero accessible records returns `[]`, while candidate overflow above
+100, evaluator failure, corrupted policy, or inconsistent batch state fails the
+whole operation with generic 503. Record CRUD, rich search, production mutation
+and activation workflows, assignment workflows, frontend behavior, and
+persistent authorization audit storage remain deferred. Role
 capability is only eligibility for further evaluation and does not waive future
 action-specific workflow/context checks. Phase 3 remains in progress.
 

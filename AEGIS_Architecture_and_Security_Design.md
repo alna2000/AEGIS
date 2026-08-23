@@ -1150,3 +1150,34 @@ audit sink is not reused as authorization evidence. This GET route is safe and
 idempotent. Before concurrent record or policy mutation is introduced, its owning
 slice must address policy/content time-of-check-to-time-of-use with an explicit
 transaction or versioning design. Phase 3 remains in progress.
+
+## Phase 3 Part 4 implementation status
+
+Phase 3 Part 4 implements the authorization-safe classified-record collection
+read without changing the accepted Parts 1-3 security architecture:
+
+- `GET /records` accepts no query parameters and returns only `record_code`,
+  `title`, and `classification`, sorted by record code. It exposes no summary,
+  content, internal identifier, totals, filters, pagination, or denial metadata.
+- Each request reloads the current authorization subject. The repository orders
+  content-free policy candidates by record code and fetches 101 to enforce a
+  maximum of 100 candidates without silent truncation.
+- Every valid candidate is converted to the existing immutable `ResourcePolicy`
+  and must receive typed explicit `ALLOW` decisions from the central evaluator
+  for both `SEARCH` and `READ`. Ordinary denial omits only that candidate;
+  malformed policy, evaluator error, unexpected exception, or cap overflow makes
+  the whole collection unavailable with generic `503`.
+- Only after all candidate evaluation succeeds does one batch projection load
+  outward metadata for the allowed server-resolved UUIDs. Exact UUID cardinality,
+  record code, controlled classification rank, and `ACTIVE` lifecycle are
+  revalidated; missing, duplicate, unknown, changed, or malformed projections
+  fail the entire request rather than returning a partial array.
+- A valid authenticated request with no allowed entries returns `200 []`.
+  System Administrator and Security Auditor roles alone therefore learn neither
+  candidate existence nor counts. Authentication failures retain their existing
+  authentication-owned `401` or generic `503` behavior.
+
+The frontend must not perform authorization. Rich search, pagination, record
+mutation, assignment administration, persistent authorization audit storage, and
+Phase 4 interface work remain deferred. No migration is introduced. Phase 3
+remains in progress pending Part 4 review and checkpoint.

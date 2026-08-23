@@ -9,7 +9,7 @@ login-attempt security and non-persistent credential-audit logging, HTTP login,
 finite hash-only server-side sessions, and the encrypted service-layer TOTP
 credential foundation plus short-lived hash-only MFA challenges and final TOTP
 session issuance. **Phase 3 - Authorization & Classified Records is in progress;
-Parts 1 and 2 are checkpointed, and Part 3 is implemented and locally verified.**
+Parts 1-3 are checkpointed, and Part 4 is implemented and locally verified.**
 Authentication still proves identity only and grants no authorization.
 PostgreSQL remains the application target and is not provisioned by this repository.
 
@@ -43,9 +43,18 @@ selects a content-free policy candidate, the existing central evaluator must
 return explicit `ALLOW`, and only then does a separate projection load title,
 summary, content, and classification. Missing and ordinarily inaccessible
 records share `404 {"detail":"Record not found"}`; evaluator and record-read
-infrastructure failures use a generic `503`. This protects only the first
-single-record READ path. Search/list, record mutations, assignment workflows,
-and persistent authorization audit storage remain unimplemented.
+infrastructure failures use a generic `503`.
+
+Phase 3 Part 4 adds `GET /records`, a deterministic metadata-only collection.
+Every valid content-free candidate must receive explicit central `SEARCH` and
+`READ` allows before its title and classification are batch-loaded by internal
+UUID. The response contains only record code, title, and classification, sorted
+by record code; it has no summaries, content, totals, filters, or pagination.
+Zero authorized records returns `[]`. At most 100 candidates are evaluated; a
+101st candidate, malformed policy, evaluator failure, or inconsistent metadata
+fails the entire operation with generic `503`. Record mutations, assignment
+workflows, rich search, frontend authorization, and persistent authorization
+audit storage remain unimplemented.
 
 ## Local setup (Windows PowerShell)
 
@@ -112,6 +121,7 @@ The local API will be available at `http://127.0.0.1:8000`.
 | `POST` | `/auth/mfa/totp/verify` | Complete a valid password-issued MFA challenge with TOTP |
 | `GET` | `/auth/me` | Return safe identity for a usable current session |
 | `POST` | `/auth/logout` | Revoke the current server-side session and clear its cookie |
+| `GET` | `/records` | Return metadata only for records centrally allowed for both SEARCH and READ |
 | `GET` | `/records/{record_code}` | Return one classified record only after current centralized authorization allows READ |
 
 For local manual testing, first apply migrations and create an active synthetic
@@ -144,7 +154,7 @@ cookie jar.
 CSRF design. The reviewed pre-authentication MFA completion also requires a
 current TOTP proof, and logout is idempotent. MFA enrollment/disablement and future
 authenticated browser state changes must not be exposed until dedicated CSRF
-protection is designed. The new classified-record route is a safe, idempotent
-GET and introduces no authenticated state change. Broader record authorization,
-frontend work, abuse protection, persistent audit storage, and deployment remain
-unimplemented.
+protection is designed. The classified-record routes are safe, idempotent GETs
+and introduce no authenticated state change. The frontend must never perform
+authorization. Record mutation and assignment workflows, rich search, abuse
+protection, persistent audit storage, and deployment remain unimplemented.

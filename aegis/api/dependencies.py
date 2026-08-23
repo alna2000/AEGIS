@@ -32,6 +32,7 @@ from aegis.services.mfa_challenges import MfaChallengeService
 from aegis.services.sessions import SessionService
 from aegis.services.authorization import AuthorizationSubjectService
 from aegis.services.intelligence_records import (
+    IntelligenceRecordCollectionReadService,
     IntelligenceRecordPolicyService,
     IntelligenceRecordReadService,
 )
@@ -162,6 +163,22 @@ def get_intelligence_record_read_service(
     """Compose the centralized policy-first classified-record read service."""
 
     return IntelligenceRecordReadService(
+        AuthorizationSubjectService(
+            AuthorizationSubjectRepository(database_session)
+        ),
+        IntelligenceRecordPolicyService(
+            IntelligenceRecordPolicyRepository(database_session)
+        ),
+        IntelligenceRecordContentRepository(database_session),
+    )
+
+
+def get_intelligence_record_collection_read_service(
+    database_session: Annotated[Session, Depends(get_db_session)],
+) -> IntelligenceRecordCollectionReadService:
+    """Compose the bounded authorization-safe record collection service."""
+
+    return IntelligenceRecordCollectionReadService(
         AuthorizationSubjectService(
             AuthorizationSubjectRepository(database_session)
         ),

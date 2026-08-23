@@ -75,6 +75,17 @@ class IntelligenceRecordContent:
     status: str
 
 
+@dataclass(frozen=True, slots=True)
+class IntelligenceRecordCollectionEntry:
+    """Restricted post-authorization metadata projection for one record."""
+
+    id: uuid.UUID
+    record_code: str
+    title: str
+    classification: str
+    status: str
+
+
 class IntelligenceRecordPolicyRepository:
     """Load record policy facts without deciding access or owning commits."""
 
@@ -95,37 +106,53 @@ class IntelligenceRecordPolicyRepository:
             IntelligenceRecord.record_code == record_code
         )
 
+    def list_policy_records(
+        self, *, limit: int
+    ) -> tuple[IntelligenceRecordPolicyFacts, ...]:
+        """Load a deterministic bounded set of content-free policy facts."""
+
+        statement = (
+            self._policy_statement()
+            .order_by(IntelligenceRecord.record_code.asc())
+            .limit(limit)
+        )
+        return tuple(
+            self._to_policy_facts(record)
+            for record in self._session.scalars(statement)
+        )
+
     def _get_policy_record(
         self, criterion: object
     ) -> IntelligenceRecordPolicyFacts | None:
-        statement = (
-            select(IntelligenceRecord)
-            .where(criterion)
-            .options(
-                load_only(
-                    IntelligenceRecord.id,
-                    IntelligenceRecord.record_code,
-                    IntelligenceRecord.status,
-                    IntelligenceRecord.classification_level_id,
-                    IntelligenceRecord.created_by_user_id,
-                    IntelligenceRecord.created_at,
-                    IntelligenceRecord.updated_at,
-                    IntelligenceRecord.retired_at,
-                    raiseload=True,
-                ),
-                joinedload(IntelligenceRecord.classification_level),
-                selectinload(
-                    IntelligenceRecord.department_assignments
-                ).joinedload(RecordDepartment.department),
-                selectinload(
-                    IntelligenceRecord.compartment_assignments
-                ).joinedload(RecordCompartment.compartment),
-            )
-        )
-        record = self._session.scalar(statement)
-        if record is None:
-            return None
+        record = self._session.scalar(self._policy_statement().where(criterion))
+        return None if record is None else self._to_policy_facts(record)
 
+    @staticmethod
+    def _policy_statement():
+        return select(IntelligenceRecord).options(
+            load_only(
+                IntelligenceRecord.id,
+                IntelligenceRecord.record_code,
+                IntelligenceRecord.status,
+                IntelligenceRecord.classification_level_id,
+                IntelligenceRecord.created_by_user_id,
+                IntelligenceRecord.created_at,
+                IntelligenceRecord.updated_at,
+                IntelligenceRecord.retired_at,
+                raiseload=True,
+            ),
+            joinedload(IntelligenceRecord.classification_level),
+            selectinload(
+                IntelligenceRecord.department_assignments
+            ).joinedload(RecordDepartment.department),
+            selectinload(
+                IntelligenceRecord.compartment_assignments
+            ).joinedload(RecordCompartment.compartment),
+        )
+
+    def _to_policy_facts(
+        self, record: IntelligenceRecord
+    ) -> IntelligenceRecordPolicyFacts:
         classification = record.classification_level
         classification_facts = (
             None
@@ -222,4 +249,37 @@ class IntelligenceRecordContentRepository:
             content=row["content"],
             classification=row["classification"],
             status=row["status"],
+        )
+
+    def get_collection_entries_by_ids(
+        self, record_ids: tuple[uuid.UUID, ...]
+    ) -> tuple[IntelligenceRecordCollectionEntry, ...]:
+        """Batch-load outward metadata for already-authorized internal IDs."""
+
+        if not record_ids:
+            return ()
+        statement = (
+            select(
+                IntelligenceRecord.id.label("id"),
+                IntelligenceRecord.record_code.label("record_code"),
+                IntelligenceRecord.title.label("title"),
+                ClearanceLevel.name.label("classification"),
+                IntelligenceRecord.status.label("status"),
+            )
+            .join(
+                ClearanceLevel,
+                ClearanceLevel.id == IntelligenceRecord.classification_level_id,
+            )
+            .where(IntelligenceRecord.id.in_(record_ids))
+            .order_by(IntelligenceRecord.record_code.asc())
+        )
+        return tuple(
+            IntelligenceRecordCollectionEntry(
+                id=row["id"],
+                record_code=row["record_code"],
+                title=row["title"],
+                classification=row["classification"],
+                status=row["status"],
+            )
+            for row in self._session.execute(statement).mappings()
         )
