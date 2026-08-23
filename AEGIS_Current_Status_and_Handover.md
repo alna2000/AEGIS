@@ -2,13 +2,16 @@
 
 ```text
 Project: AEGIS - Classified Intelligence Access System
-Completed Phase: Phase 2 - Authentication & 2FA
+Completed Phase: Phase 3 - Authorization & Classified Records
 Status: COMPLETE
-Current Phase: Phase 3 - Authorization & Classified Records
+Current Phase: Phase 4 - Modern Security Interface
+Phase 2: COMPLETE
+Phase 3: COMPLETE
 Phase 3 Part 1: COMPLETE / CHECKPOINTED
 Phase 3 Part 2: COMPLETE / CHECKPOINTED
 Phase 3 Part 3: COMPLETE / CHECKPOINTED
-Phase 3 Part 4: IMPLEMENTED / LOCALLY VERIFIED
+Phase 3 Part 4: COMPLETE / CHECKPOINTED
+Phase 4: NOT STARTED
 ```
 
 ## What AEGIS is
@@ -180,6 +183,9 @@ facts and classified records now exist in their owning Phase 3 boundaries.
 - `Phase_1_Completion_Summary.md` - official Phase 1 checkpoint summary.
 - `Phase_2_Completion_Summary.md` - official Phase 2 implementation and security
   review summary.
+- `Phase_3_Completion_Summary.md` - official Phase 3 authorization and
+  classified-record implementation/security-review summary.
+- `AEGIS_Phase4_Opening_Prompt.md` - mandatory opening handoff for Phase 4.
 - `AEGIS_Phase3_Opening_Prompt.md` - mandatory opening handoff used to begin
   Phase 3.
 - `AEGIS_Decision_Log.md` - significant durable project decisions.
@@ -287,21 +293,23 @@ completion summary, a mandatory opening prompt for the next phase, appropriate
 verification, and a meaningful Git/GitHub checkpoint. A full project ZIP is
 optional and is not a routine handover requirement.
 
-For Phase 3, the minimum new-chat package is:
+For Phase 4, the minimum new-chat package is:
 
 ```text
-AEGIS_Phase3_Opening_Prompt.md
+AEGIS_Phase4_Opening_Prompt.md
 AEGIS_Current_Status_and_Handover.md
 AEGIS_Project_Plan.md
-Phase_2_Completion_Summary.md
+Phase_3_Completion_Summary.md
 AEGIS_Architecture_and_Security_Design.md
 AEGIS_Decision_Log.md
+README.md
 ```
 
 The architecture and decision documents are included because authorization and
-classified-record handling are security-sensitive. Normal continuity follows the
-source-of-truth hierarchy in the project plan, not a ZIP archive. The Phase 3 chat
-must review these documents before asking Codex to implement anything.
+classified-record handling remain security-sensitive. Normal continuity follows
+the source-of-truth hierarchy in the project plan, not a ZIP archive. The Phase 4
+chat must review these documents and the actual backend before asking Codex to
+implement anything.
 
 ## Completed Phase 2 boundary
 
@@ -326,7 +334,8 @@ Part 1 below implements that first slice without changing this separation.
 
 ## Phase 3 Part 1 boundary
 
-Phase 3 is now **IN PROGRESS**. Part 1 is implemented and locally verified with
+At its checkpoint, Phase 3 Part 1 placed Phase 3 **IN PROGRESS** and was locally
+verified with
 146 passing tests. It adds controlled roles, departments, clearance levels, and
 compartments; current user-role and user-compartment assignments; and nullable
 transitional `users.department_id` / `users.clearance_level_id` foreign keys.
@@ -402,11 +411,13 @@ This slice does not add search/list, record mutation, assignment administration,
 generic authorization middleware, CSRF-sensitive state changes, or persistent
 authorization auditing. It does not claim that all classified-record workflows
 are protected. Policy/content TOCTOU must be addressed before concurrent record
-or policy mutation workflows are introduced. Phase 3 remains **IN PROGRESS**.
+or policy mutation workflows are introduced. At the Part 3 checkpoint, Phase 3
+remained **IN PROGRESS**.
 
 ## Phase 3 Part 4 boundary
 
-Part 4 is implemented and locally verified. `GET /records` returns a sorted
+Part 4 is implemented, verified, reviewed, and checkpointed. `GET /records`
+returns a sorted
 metadata-only array containing exactly `record_code`, `title`, and
 `classification` for records that the freshly loaded subject is centrally
 allowed to both `SEARCH` and `READ`. A successful subject with no accessible
@@ -426,5 +437,46 @@ are exposed.
 Authorization remains exclusively backend-owned; frontend visibility must never
 be treated as authority. Rich search, record mutations, assignment administration,
 persistent authorization audit storage, and Phase 4 UI remain deferred. Phase 3
-is still **IN PROGRESS** pending Part 4 review and checkpoint; no Phase 3 closure
-artifacts have been created.
+implementation is complete and Part 4 is checkpointed.
+
+## Phase 3 completion boundary
+
+Phase 3 is **COMPLETE**. It delivers current normalized authorization subjects,
+the typed central default-deny evaluator, synthetic classified-record persistence
+and policy conversion, protected detail read, and authorization-safe collection
+read. Authentication remains identity-only; every protected request reloads
+current server-side roles, department, clearance, and compartments.
+
+The current classified-record HTTP surface is:
+
+```text
+GET /records
+GET /records/{record_code}
+```
+
+Detail reads require explicit central `READ` allow before content loading and
+hide missing or ordinarily inaccessible records behind generic `404`. Collection
+reads require both `SEARCH` and `READ`, load only allowed UUID metadata, return
+only record code/title/classification, and return `[]` when nothing is accessible.
+Collection evaluation is intentionally capped at 100 deterministic candidates;
+a 101st candidate fails closed with `503`.
+
+Phase 3 introduced revisions `20260822_0005` and `20260823_0006`; current Alembic
+head is `20260823_0006`. Closure verification uses the full 269-test suite plus
+focused authentication, authorization, record, detail, collection, and migration
+regressions. The final Phase 3 closure checkpoint is the repository HEAD carrying
+`Complete AEGIS Phase 3 and prepare Phase 4 handover`; Git history is authoritative
+for its hash.
+
+Phase 4 is **NOT STARTED**. Its first work must be design review for a read-only
+interface that renders only backend-authorized results. It must not infer support
+for record mutation, activation/retirement, policy or assignment administration,
+rich search, pagination, totals, persistent authorization audit viewing, bot
+protection, monitoring/SIEM, deployment, or AI/RAG. Persistent audit remains
+primarily Phase 6, bot/abuse protection Phase 5, and deployment Phase 7.
+
+Known limitations remain: the read-only policy/representation boundary does not
+solve future concurrent-mutation TOCTOU; proper isolation/versioning must precede
+such workflows. PostgreSQL SQL is rendered offline but no live production
+PostgreSQL execution or production-scale collection performance is claimed. All
+identities and intelligence are fictional and synthetic.

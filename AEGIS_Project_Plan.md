@@ -12,8 +12,10 @@ learning path or stronger security approach is discovered.
    Establish user identity and a second authentication factor.
 3. **Phase 3 — Authorization & Classified Records**
    Enforce access decisions and introduce synthetic intelligence records.
+   **Complete.**
 4. **Phase 4 — Modern Security Interface**
    Build a clear, professional user interface over proven backend controls.
+   **Not started.**
 5. **Phase 5 — Bot Detection & Abuse Protection**
    Add layered defenses for automated and abusive requests.
 6. **Phase 6 — Audit, Monitoring & Security Testing**
@@ -24,6 +26,12 @@ learning path or stronger security approach is discovered.
    Complete verification and prepare the AEGIS v1 portfolio release.
 
 ## Current milestone
+
+```text
+Phase 2: COMPLETE
+Phase 3: COMPLETE
+Phase 4: NOT STARTED
+```
 
 Phase 1 is complete: Part 1 established the verified minimal FastAPI foundation,
 Part 2 designed the security architecture, and Part 3 designed the database
@@ -40,7 +48,7 @@ window, counter-based replay protection, disablement, and controlled TOTP audit
 semantics. Part 5 completed password-to-MFA challenge integration, hash-only
 short-lived challenge state, final session issuance, bypass/replay/transaction
 tests, and the Phase 2 security review. Phase 3 - Authorization & Classified
-Records is in progress. Part 1 implements normalized current subject attributes,
+Records is complete. Part 1 implements normalized current subject attributes,
 server-side `AuthorizationSubject` loading, controlled reference data, an explicit
 version-controlled role capability map, and a pure typed default-deny policy over
 content-free resource snapshots. Part 2 implements bounded synthetic classified
@@ -61,9 +69,11 @@ pagination; zero accessible records returns `[]`, while candidate overflow above
 100, evaluator failure, corrupted policy, or inconsistent batch state fails the
 whole operation with generic 503. Record CRUD, rich search, production mutation
 and activation workflows, assignment workflows, frontend behavior, and
-persistent authorization audit storage remain deferred. Role
-capability is only eligibility for further evaluation and does not waive future
-action-specific workflow/context checks. Phase 3 remains in progress.
+persistent authorization audit storage remain deferred. Role capability is only
+eligibility for further evaluation and does not waive future action-specific
+workflow/context checks. Phase 4 - Modern Security Interface has not started and
+must begin with repository review and design for a read-only interface over the
+existing backend-authorized endpoints.
 
 ## Phase Completion and Handover Protocol
 
@@ -145,13 +155,13 @@ Full ZIP every phase:           NO, unless useful
 
 Use this hierarchy for normal project continuity:
 
-1. Current local AEGIS repository.
-2. GitHub `main` at verified checkpoints.
-3. `AEGIS_Current_Status_and_Handover.md`.
-4. `AEGIS_Architecture_and_Security_Design.md`.
-5. `AEGIS_Decision_Log.md`.
-6. `AEGIS_Project_Plan.md`.
-7. Latest `Phase_X_Completion_Summary.md`.
-8. Next-phase opening prompt.
+1. Actual repository implementation and tests at verified `main` checkpoints.
+2. `AEGIS_Current_Status_and_Handover.md`.
+3. `AEGIS_Architecture_and_Security_Design.md`.
+4. `AEGIS_Decision_Log.md`.
+5. `AEGIS_Project_Plan.md`.
+6. Latest `Phase_X_Completion_Summary.md`.
+7. `README.md`.
+8. Next-phase opening prompt for operating instructions.
 
 A ZIP is not the primary source of truth.

@@ -14,6 +14,11 @@ It is a design contract for later implementation and testing, not evidence that 
 control already exists. AEGIS contains synthetic identities, organizations,
 intelligence, classifications, compartments, and events only.
 
+Phase 3 now implements the authorization and classified-record read subset
+described in the implementation-status sections at the end of this document.
+Design statements outside those sections remain future requirements unless they
+are explicitly identified as implemented and tested.
+
 ## Security model
 
 AEGIS will combine role-based access control (RBAC) with attribute-based access
@@ -1149,7 +1154,8 @@ middleware, and state-changing CSRF work remain deferred. The authentication
 audit sink is not reused as authorization evidence. This GET route is safe and
 idempotent. Before concurrent record or policy mutation is introduced, its owning
 slice must address policy/content time-of-check-to-time-of-use with an explicit
-transaction or versioning design. Phase 3 remains in progress.
+transaction or versioning design. At the Part 3 checkpoint, Phase 3 remained in
+progress.
 
 ## Phase 3 Part 4 implementation status
 
@@ -1179,5 +1185,33 @@ read without changing the accepted Parts 1-3 security architecture:
 
 The frontend must not perform authorization. Rich search, pagination, record
 mutation, assignment administration, persistent authorization audit storage, and
-Phase 4 interface work remain deferred. No migration is introduced. Phase 3
-remains in progress pending Part 4 review and checkpoint.
+Phase 4 interface work remain deferred. No migration is introduced.
+
+## Phase 3 closure status
+
+Phase 3 is complete. Parts 1-4 are implemented, security-reviewed, verified, and
+checkpointed. The central typed evaluator remains the sole classified-record
+policy decision point; clients, identifiers, creators, roles alone, and stored
+data that fails validation cannot authorize. Detail content and collection
+metadata load only after their applicable explicit authorization decisions.
+
+```text
+Phase 2: COMPLETE
+Phase 3: COMPLETE
+Phase 4: NOT STARTED
+```
+
+The implemented HTTP boundary is read-only: `GET /records` and
+`GET /records/{record_code}`. It does not implement record or policy mutation,
+assignment administration, rich search, pagination, persistent authorization
+audit evidence, RLS, or a frontend. The collection cap of 100 candidates with a
+101st-row fail-closed `503` is a bounded synthetic-demonstration limitation, not
+pagination or a production-scale claim. FastAPI currently ignores undeclared
+collection query parameters; they have no filtering or authorization effect.
+
+The policy-first/content-second design revalidates identity, classification, and
+lifecycle consistency after authorization, but it does not claim to solve all
+concurrent mutation TOCTOU. Before production mutation workflows are introduced,
+their owning design must define transaction isolation, versioning, or equivalent
+controls and atomic persistent authorization audit semantics. All AEGIS data
+remains fictional and synthetic.

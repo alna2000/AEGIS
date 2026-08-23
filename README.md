@@ -8,10 +8,17 @@ are complete. Phase 2 implements user/password persistence, generic
 login-attempt security and non-persistent credential-audit logging, HTTP login,
 finite hash-only server-side sessions, and the encrypted service-layer TOTP
 credential foundation plus short-lived hash-only MFA challenges and final TOTP
-session issuance. **Phase 3 - Authorization & Classified Records is in progress;
-Parts 1-3 are checkpointed, and Part 4 is implemented and locally verified.**
+session issuance. **Phase 3 - Authorization & Classified Records is complete;
+Parts 1-4 are implemented, security-reviewed, verified, and checkpointed. Phase
+4 - Modern Security Interface has not started.**
 Authentication still proves identity only and grants no authorization.
 PostgreSQL remains the application target and is not provisioned by this repository.
+
+```text
+Phase 2: COMPLETE
+Phase 3: COMPLETE
+Phase 4: NOT STARTED
+```
 
 Phase 3 Part 1 adds controlled role, department, clearance, and compartment
 reference data; normalized current user assignments; a separately loaded
@@ -55,6 +62,14 @@ Zero authorized records returns `[]`. At most 100 candidates are evaluated; a
 fails the entire operation with generic `503`. Record mutations, assignment
 workflows, rich search, frontend authorization, and persistent authorization
 audit storage remain unimplemented.
+
+At Phase 3 closure, authorization remains entirely backend-owned and read-only.
+The controlled clearance hierarchy is `UNCLASSIFIED=10`, `CONFIDENTIAL=20`,
+`SECRET=30`, and `TOP SECRET=40`; arbitrary ranks fail closed. `DRAFT` and
+`RETIRED` records are authorization-unusable, while `ACTIVE` records are only
+potentially usable when their complete RBAC/ABAC policy passes. AEGIS is a local
+learning/portfolio application and makes no production PostgreSQL execution,
+deployment, real-classified-data, or production-scale collection claim.
 
 ## Local setup (Windows PowerShell)
 
@@ -158,3 +173,9 @@ protection is designed. The classified-record routes are safe, idempotent GETs
 and introduce no authenticated state change. The frontend must never perform
 authorization. Record mutation and assignment workflows, rich search, abuse
 protection, persistent audit storage, and deployment remain unimplemented.
+
+Phase 4 may build a read-only interface over the existing authentication and
+record GET routes, but it must render only backend-authorized responses. Record
+creation or mutation, assignment administration, rich search, pagination,
+persistent authorization audit, bot protection, monitoring, and deployment are
+not available backend capabilities.
