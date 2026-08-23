@@ -43,12 +43,16 @@ tests, and the Phase 2 security review. Phase 3 - Authorization & Classified
 Records is in progress. Part 1 implements normalized current subject attributes,
 server-side `AuthorizationSubject` loading, controlled reference data, an explicit
 version-controlled role capability map, and a pure typed default-deny policy over
-content-free resource snapshots. Authentication state still grants no
-authorization. Classified-record persistence, policy relationships, HTTP
-enforcement, assignment workflows, and persistent authorization audit storage
-remain for later Phase 3 parts. Role capability is only eligibility for further
-evaluation and does not waive future action-specific workflow/context checks.
-Phase 3 Part 2 has not started.
+content-free resource snapshots. Part 2 implements bounded synthetic classified
+record persistence, normalized department/compartment policy relationships, a
+restricted read-only policy-fact repository, and fail-closed conversion into the
+existing `ResourcePolicy`. Authentication state still grants no authorization,
+and identifiers or creator provenance never authorize. HTTP enforcement,
+record CRUD/search/list, production mutation and activation workflows,
+assignment workflows, and persistent authorization audit storage remain for
+later Phase 3 parts. Role capability is only eligibility for further evaluation
+and does not waive future action-specific workflow/context checks. Phase 3 Part 3
+has not started.
 
 ## Phase Completion and Handover Protocol
 

@@ -11,26 +11,12 @@ from aegis.db.models import User
 from aegis.security.authorization import (
     AuthorizationDenyReason,
     AuthorizationSubject,
+    CONTROLLED_CLEARANCE_NAME_RANKS,
+    CONTROLLED_COMPARTMENT_NAMES,
+    CONTROLLED_DEPARTMENT_NAMES,
     RoleName,
 )
 from aegis.services.authentication import AuthenticatedPrincipal
-
-
-_DEPARTMENT_NAMES = frozenset(
-    {
-        "Cyber Intelligence",
-        "Counterintelligence",
-        "Strategic Analysis",
-        "Operations",
-    }
-)
-_CLEARANCE_NAME_RANKS = {
-    "UNCLASSIFIED": 10,
-    "CONFIDENTIAL": 20,
-    "SECRET": 30,
-    "TOP SECRET": 40,
-}
-_COMPARTMENT_NAMES = frozenset({"NIGHTFALL", "ORION", "SENTINEL"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,7 +105,7 @@ class AuthorizationSubjectService:
                 state_valid = False
         elif (
             user.department.id != department_id
-            or user.department.name not in _DEPARTMENT_NAMES
+            or user.department.name not in CONTROLLED_DEPARTMENT_NAMES
             or not _valid_lifecycle(
                 user.department.is_active, user.department.retired_at
             )
@@ -134,7 +120,7 @@ class AuthorizationSubjectService:
                 state_valid = False
         elif (
             user.clearance_level.id != user.clearance_level_id
-            or _CLEARANCE_NAME_RANKS.get(user.clearance_level.name)
+            or CONTROLLED_CLEARANCE_NAME_RANKS.get(user.clearance_level.name)
             != user.clearance_level.rank
         ):
             state_valid = False
@@ -149,7 +135,7 @@ class AuthorizationSubjectService:
                 compartment is None
                 or assignment.compartment_id in seen_compartment_ids
                 or compartment.id != assignment.compartment_id
-                or compartment.name not in _COMPARTMENT_NAMES
+                or compartment.name not in CONTROLLED_COMPARTMENT_NAMES
                 or not _valid_assignment_time(assignment.assigned_at)
             ):
                 state_valid = False

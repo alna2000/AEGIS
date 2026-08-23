@@ -1077,4 +1077,43 @@ relationships, CRUD/search endpoints, backend endpoint enforcement, assignment
 workflows, persistent authorization audit evidence, and PostgreSQL RLS remain
 deferred to later approved Phase 3 parts. PostgreSQL migration SQL was rendered
 offline through `20260822_0005`; no live PostgreSQL runtime or concurrency claim
-is made. Phase 3 Part 2 has not started.
+is made. At the Part 1 checkpoint, Phase 3 Part 2 had not started.
+
+## Phase 3 Part 2 implementation status
+
+Phase 3 Part 2 implements the record-side facts needed by the accepted central
+policy without adding an API or a second evaluator:
+
+- Revision `20260823_0006` adds bounded synthetic `intelligence_records` with a
+  canonical unique `INT-99999` code, controlled `DRAFT`/`ACTIVE`/`RETIRED`
+  lifecycle, required normalized classification and creator references, UTC
+  timestamps, restrictive foreign keys, and retirement consistency constraints.
+- Composite-key `record_departments` and `record_compartments` tables represent
+  explicit policy. Record IDs/codes and creator provenance never authorize.
+  Zero departments is incomplete policy and never unrestricted access. Zero
+  compartments means no compartment requirement; otherwise all listed active
+  compartments are required.
+- A draft may temporarily lack departments but is always authorization-unusable.
+  Active policy conversion requires at least one valid active department, a
+  controlled classification name/rank pair, and valid active compartment
+  references. Retired records are always unusable. The active-department
+  invariant is deliberately fail-closed in conversion; a future authorized
+  activation workflow must enforce it transactionally before status change.
+- The record repository returns a restricted immutable policy-facts projection
+  without title, summary, or content. It performs retrieval only and never
+  commits or decides access. The conversion service validates those facts and
+  creates the existing immutable `ResourcePolicy`; only the existing pure
+  `authorize()` evaluator decides.
+- Shared controlled clearance, department, and compartment vocabularies prevent
+  subject-side and resource-side conversion from drifting. Missing records,
+  database failures, malformed lifecycle, corrupted classifications, invalid or
+  inactive references, and duplicate/malformed relationships fail closed.
+
+All stored intelligence remains synthetic. Record HTTP CRUD/search/list,
+authorization dependencies or middleware, production mutation workflows,
+record-code allocation, persistent record audit storage, RLS, and live
+PostgreSQL execution remain deferred. Future record create/update/retire/policy
+changes require caller-owned transactions and atomic controlled audit events such
+as `RECORD_CREATED`, `RECORD_UPDATED`, `RECORD_RETIRED`, and
+`RECORD_POLICY_CHANGED`; intelligence content must never enter those events.
+Phase 3 Part 3 has not started.

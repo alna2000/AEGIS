@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from enum import Enum
+import re
 
 from sqlalchemy import (
     BigInteger,
@@ -32,6 +34,17 @@ def utc_now() -> datetime:
     """Return the current timezone-aware UTC timestamp."""
 
     return datetime.now(timezone.utc)
+
+
+class IntelligenceRecordStatus(str, Enum):
+    """Controlled persistence lifecycle for synthetic intelligence records."""
+
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    RETIRED = "RETIRED"
+
+
+_RECORD_CODE_PATTERN = re.compile(r"^INT-[0-9]{5}$")
 
 
 class Role(Base):
@@ -102,6 +115,10 @@ class Department(Base):
         back_populates="department",
         passive_deletes=True,
     )
+    record_assignments: Mapped[list[RecordDepartment]] = relationship(
+        back_populates="department",
+        passive_deletes=True,
+    )
 
 
 class ClearanceLevel(Base):
@@ -125,6 +142,10 @@ class ClearanceLevel(Base):
 
     users: Mapped[list[User]] = relationship(
         back_populates="clearance_level",
+        passive_deletes=True,
+    )
+    intelligence_records: Mapped[list[IntelligenceRecord]] = relationship(
+        back_populates="classification_level",
         passive_deletes=True,
     )
 
@@ -158,6 +179,10 @@ class Compartment(Base):
     retired_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
     user_assignments: Mapped[list[UserCompartment]] = relationship(
+        back_populates="compartment",
+        passive_deletes=True,
+    )
+    record_assignments: Mapped[list[RecordCompartment]] = relationship(
         back_populates="compartment",
         passive_deletes=True,
     )
@@ -237,6 +262,11 @@ class User(Base):
     compartment_assignments: Mapped[list[UserCompartment]] = relationship(
         foreign_keys="UserCompartment.user_id",
         back_populates="user",
+        passive_deletes=True,
+    )
+    created_intelligence_records: Mapped[list[IntelligenceRecord]] = relationship(
+        foreign_keys="IntelligenceRecord.created_by_user_id",
+        back_populates="creator",
         passive_deletes=True,
     )
     sessions: Mapped[list[UserSession]] = relationship(
@@ -354,6 +384,201 @@ class UserCompartment(Base):
     )
     assigned_by: Mapped[User | None] = relationship(
         foreign_keys=[assigned_by_user_id]
+    )
+
+
+class IntelligenceRecord(Base):
+    """Persisted synthetic intelligence content and record-side policy state."""
+
+    __tablename__ = "intelligence_records"
+    __table_args__ = (
+        CheckConstraint(
+            "length(record_code) = 9 AND "
+            "substr(record_code, 1, 4) = 'INT-' AND "
+            "record_code = upper(record_code) AND "
+            "substr(record_code, 5, 1) BETWEEN '0' AND '9' AND "
+            "substr(record_code, 6, 1) BETWEEN '0' AND '9' AND "
+            "substr(record_code, 7, 1) BETWEEN '0' AND '9' AND "
+            "substr(record_code, 8, 1) BETWEEN '0' AND '9' AND "
+            "substr(record_code, 9, 1) BETWEEN '0' AND '9'",
+            name="ck_intelligence_records_record_code_canonical",
+        ),
+        CheckConstraint(
+            "length(title) BETWEEN 1 AND 160 AND title = trim(title)",
+            name="ck_intelligence_records_title_length",
+        ),
+        CheckConstraint(
+            "summary IS NULL OR "
+            "(length(summary) BETWEEN 1 AND 1000 AND summary = trim(summary))",
+            name="ck_intelligence_records_summary_length",
+        ),
+        CheckConstraint(
+            "length(content) BETWEEN 1 AND 10000",
+            name="ck_intelligence_records_content_length",
+        ),
+        CheckConstraint(
+            "status IN ('DRAFT', 'ACTIVE', 'RETIRED')",
+            name="ck_intelligence_records_status_controlled",
+        ),
+        CheckConstraint(
+            "updated_at >= created_at",
+            name="ck_intelligence_records_updated_after_creation",
+        ),
+        CheckConstraint(
+            "(status IN ('DRAFT', 'ACTIVE') AND retired_at IS NULL) OR "
+            "(status = 'RETIRED' AND retired_at IS NOT NULL "
+            "AND retired_at >= created_at)",
+            name="ck_intelligence_records_lifecycle_consistent",
+        ),
+        Index(
+            "ix_intelligence_records_classification_level_id",
+            "classification_level_id",
+        ),
+        Index(
+            "ix_intelligence_records_created_by_user_id",
+            "created_by_user_id",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    record_code: Mapped[str] = mapped_column(String(9), unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    summary: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    content: Mapped[str] = mapped_column(String(10000), nullable=False)
+    classification_level_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("clearance_levels.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=IntelligenceRecordStatus.DRAFT.value
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=utc_now, onupdate=utc_now
+    )
+    retired_at: Mapped[datetime | None] = mapped_column(
+        UTCDateTime(), nullable=True
+    )
+
+    classification_level: Mapped[ClearanceLevel] = relationship(
+        back_populates="intelligence_records"
+    )
+    creator: Mapped[User] = relationship(
+        foreign_keys=[created_by_user_id],
+        back_populates="created_intelligence_records",
+    )
+    department_assignments: Mapped[list[RecordDepartment]] = relationship(
+        back_populates="record",
+        passive_deletes=True,
+    )
+    compartment_assignments: Mapped[list[RecordCompartment]] = relationship(
+        back_populates="record",
+        passive_deletes=True,
+    )
+
+    @validates("record_code")
+    def _validate_record_code(self, _key: str, value: str) -> str:
+        if not isinstance(value, str) or _RECORD_CODE_PATTERN.fullmatch(value) is None:
+            raise ValueError("record code must match INT-99999")
+        return value
+
+    @validates("title")
+    def _validate_title(self, _key: str, value: str) -> str:
+        if (
+            not isinstance(value, str)
+            or value != value.strip()
+            or not 1 <= len(value) <= 160
+        ):
+            raise ValueError("record title must be trimmed and 1 to 160 characters")
+        return value
+
+    @validates("summary")
+    def _validate_summary(self, _key: str, value: str | None) -> str | None:
+        if value is not None and (
+            not isinstance(value, str)
+            or value != value.strip()
+            or not 1 <= len(value) <= 1000
+        ):
+            raise ValueError("record summary must be null or trimmed and bounded")
+        return value
+
+    @validates("content")
+    def _validate_content(self, _key: str, value: str) -> str:
+        if not isinstance(value, str) or not 1 <= len(value) <= 10000:
+            raise ValueError("record content must be 1 to 10000 characters")
+        return value
+
+    @validates("status")
+    def _validate_status(
+        self, _key: str, value: str | IntelligenceRecordStatus
+    ) -> str:
+        try:
+            return IntelligenceRecordStatus(value).value
+        except (TypeError, ValueError) as error:
+            raise ValueError("record status must be controlled") from error
+
+
+class RecordDepartment(Base):
+    """One explicit department authorized for a synthetic record."""
+
+    __tablename__ = "record_departments"
+    __table_args__ = (
+        Index("ix_record_departments_department_id", "department_id"),
+    )
+
+    record_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("intelligence_records.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    department_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("departments.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+
+    record: Mapped[IntelligenceRecord] = relationship(
+        back_populates="department_assignments"
+    )
+    department: Mapped[Department] = relationship(
+        back_populates="record_assignments"
+    )
+
+
+class RecordCompartment(Base):
+    """One explicit compartment required by a synthetic record."""
+
+    __tablename__ = "record_compartments"
+    __table_args__ = (
+        Index("ix_record_compartments_compartment_id", "compartment_id"),
+    )
+
+    record_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("intelligence_records.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    compartment_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("compartments.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+
+    record: Mapped[IntelligenceRecord] = relationship(
+        back_populates="compartment_assignments"
+    )
+    compartment: Mapped[Compartment] = relationship(
+        back_populates="record_assignments"
     )
 
 

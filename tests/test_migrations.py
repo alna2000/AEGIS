@@ -178,6 +178,9 @@ def test_authentication_migrations_upgrade_and_downgrade(tmp_path: Path) -> None
         "compartments",
         "user_roles",
         "user_compartments",
+        "intelligence_records",
+        "record_departments",
+        "record_compartments",
     } <= set(inspector.get_table_names())
 
     user_columns = {
@@ -284,6 +287,99 @@ def test_authentication_migrations_upgrade_and_downgrade(tmp_path: Path) -> None
             "SENTINEL",
         }
         assert set(connection.scalars(select(compartments.c.is_active))) == {True}
+
+    record_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("intelligence_records")
+    }
+    assert set(record_columns) == {
+        "id",
+        "record_code",
+        "title",
+        "summary",
+        "content",
+        "classification_level_id",
+        "created_by_user_id",
+        "status",
+        "created_at",
+        "updated_at",
+        "retired_at",
+    }
+    assert record_columns["classification_level_id"]["nullable"] is False
+    assert record_columns["created_by_user_id"]["nullable"] is False
+    record_uniques = {
+        tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints(
+            "intelligence_records"
+        )
+    }
+    assert ("record_code",) in record_uniques
+    record_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints(
+            "intelligence_records"
+        )
+    }
+    assert {
+        "ck_intelligence_records_record_code_canonical",
+        "ck_intelligence_records_title_length",
+        "ck_intelligence_records_summary_length",
+        "ck_intelligence_records_content_length",
+        "ck_intelligence_records_status_controlled",
+        "ck_intelligence_records_updated_after_creation",
+        "ck_intelligence_records_lifecycle_consistent",
+    } <= record_checks
+    record_foreign_keys = {
+        tuple(foreign_key["constrained_columns"]): foreign_key
+        for foreign_key in inspector.get_foreign_keys("intelligence_records")
+    }
+    assert record_foreign_keys[("classification_level_id",)][
+        "referred_table"
+    ] == "clearance_levels"
+    assert record_foreign_keys[("created_by_user_id",)]["referred_table"] == (
+        "users"
+    )
+    assert all(
+        foreign_key["options"].get("ondelete") == "RESTRICT"
+        for foreign_key in record_foreign_keys.values()
+    )
+    record_indexes = {
+        index["name"]: tuple(index["column_names"])
+        for index in inspector.get_indexes("intelligence_records")
+    }
+    assert record_indexes[
+        "ix_intelligence_records_classification_level_id"
+    ] == ("classification_level_id",)
+    assert record_indexes["ix_intelligence_records_created_by_user_id"] == (
+        "created_by_user_id",
+    )
+
+    for table_name, reference_column, reverse_index in (
+        (
+            "record_departments",
+            "department_id",
+            "ix_record_departments_department_id",
+        ),
+        (
+            "record_compartments",
+            "compartment_id",
+            "ix_record_compartments_compartment_id",
+        ),
+    ):
+        assert tuple(
+            inspector.get_pk_constraint(table_name)["constrained_columns"]
+        ) == ("record_id", reference_column)
+        relationship_foreign_keys = inspector.get_foreign_keys(table_name)
+        assert len(relationship_foreign_keys) == 2
+        assert all(
+            foreign_key["options"].get("ondelete") == "RESTRICT"
+            for foreign_key in relationship_foreign_keys
+        )
+        relationship_indexes = {
+            index["name"]: tuple(index["column_names"])
+            for index in inspector.get_indexes(table_name)
+        }
+        assert relationship_indexes == {reverse_index: (reference_column,)}
     engine.dispose()
 
     command.downgrade(config, "base")
@@ -291,7 +387,6 @@ def test_authentication_migrations_upgrade_and_downgrade(tmp_path: Path) -> None
     engine = create_engine(database_url)
     assert "users" not in inspect(engine).get_table_names()
     engine.dispose()
-
 
 def test_authorization_migration_preserves_existing_phase_2_user_and_downgrades(
     tmp_path: Path,
@@ -321,6 +416,7 @@ def test_authorization_migration_preserves_existing_phase_2_user_and_downgrades(
             )
         )
     engine.dispose()
+
 
     command.upgrade(config, "20260822_0005")
     engine = create_engine(database_url)
@@ -354,4 +450,38 @@ def test_authorization_migration_preserves_existing_phase_2_user_and_downgrades(
         "updated_at",
         "disabled_at",
     }
+    engine.dispose()
+
+
+def test_intelligence_record_migration_upgrades_part_1_and_downgrades(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "part1-record-upgrade.sqlite3"
+    database_url = f"sqlite+pysqlite:///{database_path.as_posix()}"
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(config, "20260822_0005")
+
+    engine = create_engine(database_url)
+    assert "roles" in inspect(engine).get_table_names()
+    assert "intelligence_records" not in inspect(engine).get_table_names()
+    engine.dispose()
+
+    command.upgrade(config, "20260823_0006")
+    engine = create_engine(database_url)
+    upgraded_tables = set(inspect(engine).get_table_names())
+    assert {
+        "intelligence_records",
+        "record_departments",
+        "record_compartments",
+    } <= upgraded_tables
+    engine.dispose()
+
+    command.downgrade(config, "20260822_0005")
+    engine = create_engine(database_url)
+    downgraded_tables = set(inspect(engine).get_table_names())
+    assert "intelligence_records" not in downgraded_tables
+    assert "record_departments" not in downgraded_tables
+    assert "record_compartments" not in downgraded_tables
+    assert "roles" in downgraded_tables
     engine.dispose()

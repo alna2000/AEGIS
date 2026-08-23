@@ -48,6 +48,8 @@ class AuthorizationDenyReason(str, Enum):
     MISSING_COMPARTMENT = "MISSING_COMPARTMENT"
     INVALID_RESOURCE_POLICY = "INVALID_RESOURCE_POLICY"
     RESOURCE_UNUSABLE = "RESOURCE_UNUSABLE"
+    RESOURCE_MISSING = "RESOURCE_MISSING"
+    RESOURCE_LOAD_ERROR = "RESOURCE_LOAD_ERROR"
     UNSUPPORTED_ACTION = "UNSUPPORTED_ACTION"
     UNSUPPORTED_RESOURCE_TYPE = "UNSUPPORTED_RESOURCE_TYPE"
     POLICY_EVALUATION_ERROR = "POLICY_EVALUATION_ERROR"
@@ -61,7 +63,24 @@ class RoleName(str, Enum):
     SYSTEM_ADMINISTRATOR = "System Administrator"
 
 
-CONTROLLED_CLEARANCE_RANKS = frozenset({10, 20, 30, 40})
+CONTROLLED_CLEARANCE_NAME_RANKS: Mapping[str, int] = MappingProxyType(
+    {
+        "UNCLASSIFIED": 10,
+        "CONFIDENTIAL": 20,
+        "SECRET": 30,
+        "TOP SECRET": 40,
+    }
+)
+CONTROLLED_CLEARANCE_RANKS = frozenset(CONTROLLED_CLEARANCE_NAME_RANKS.values())
+CONTROLLED_DEPARTMENT_NAMES = frozenset(
+    {
+        "Cyber Intelligence",
+        "Counterintelligence",
+        "Strategic Analysis",
+        "Operations",
+    }
+)
+CONTROLLED_COMPARTMENT_NAMES = frozenset({"NIGHTFALL", "ORION", "SENTINEL"})
 
 
 @dataclass(frozen=True, slots=True)

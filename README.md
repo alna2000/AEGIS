@@ -9,8 +9,8 @@ login-attempt security and non-persistent credential-audit logging, HTTP login,
 finite hash-only server-side sessions, and the encrypted service-layer TOTP
 credential foundation plus short-lived hash-only MFA challenges and final TOTP
 session issuance. **Phase 3 - Authorization & Classified Records is in progress;
-Part 1 is implemented and locally verified.** Authentication still proves
-identity only and grants no authorization.
+Part 1 is checkpointed and Part 2 is implemented and locally verified.**
+Authentication still proves identity only and grants no authorization.
 PostgreSQL remains the application target and is not provisioned by this repository.
 
 Phase 3 Part 1 adds controlled role, department, clearance, and compartment
@@ -18,11 +18,25 @@ reference data; normalized current user assignments; a separately loaded
 immutable `AuthorizationSubject`; a version-controlled role capability map; and
 a pure typed default-deny evaluator over content-free resource-policy snapshots.
 Existing users have nullable transitional department and clearance references,
-and missing authorization state denies. Classified-record tables, record/search
-endpoints, HTTP authorization enforcement, assignment APIs, and persistent
-authorization audit storage are not implemented yet. Role capability is only an
-input to continued evaluation and does not waive future action-specific
-workflow/context checks. Phase 3 Part 2 has not started.
+and missing authorization state denies. At the Part 1 checkpoint,
+classified-record tables, record/search endpoints, HTTP authorization
+enforcement, assignment APIs, and persistent authorization audit storage were
+not implemented. Record persistence is now implemented by Part 2 below; the
+other listed boundaries remain deferred. Role capability is only an input to
+continued evaluation and does not waive future action-specific workflow/context
+checks.
+
+Phase 3 Part 2 adds bounded synthetic `intelligence_records` persistence plus
+normalized record-department and record-compartment policy relationships. A
+read-only repository loads content-free policy facts, and a fail-closed service
+converts them to the existing immutable `ResourcePolicy`; the existing central
+`authorize()` evaluator remains authoritative. Record UUIDs, codes, and creators
+never grant access. Draft and retired records are unusable; active records require
+a controlled classification and at least one active authorized department. Zero
+record compartments means no compartment requirement, while every listed active
+compartment is required. HTTP enforcement, search/list/CRUD APIs, production
+record mutation, and persistent record auditing remain unimplemented. Phase 3
+Part 3 has not started.
 
 ## Local setup (Windows PowerShell)
 

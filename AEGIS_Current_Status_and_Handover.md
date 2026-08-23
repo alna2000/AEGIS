@@ -5,9 +5,9 @@ Project: AEGIS - Classified Intelligence Access System
 Completed Phase: Phase 2 - Authentication & 2FA
 Status: COMPLETE
 Current Phase: Phase 3 - Authorization & Classified Records
-Status: IN PROGRESS - Part 1 implemented and locally verified
-Next Part: Phase 3 Part 2
-Status: NOT STARTED
+Phase 3 Part 1: COMPLETE / CHECKPOINTED
+Phase 3 Part 2: IMPLEMENTED / LOCALLY VERIFIED
+Phase 3 Part 3: NOT STARTED
 ```
 
 ## What AEGIS is
@@ -185,11 +185,13 @@ authentication state.
 - `AEGIS_Decision_Log.md` - significant durable project decisions.
 - `pyproject.toml` - Python package, dependencies, and pytest configuration.
 - `alembic.ini` and `migrations/` - environment-backed migration configuration
-  and reviewed authentication/authorization-subject schema migrations.
+  and reviewed authentication, authorization-subject, and synthetic-record
+  schema migrations.
 - `aegis/main.py` - FastAPI application factory and exported application.
 - `aegis/api/routes/system.py` - foundation status and health endpoints.
 - `aegis/core/config.py` - environment-based settings.
-- `aegis/db/` - typed user model, engine/session setup, and user repository.
+- `aegis/db/` - typed identity/authorization/record models, engine/session setup,
+  repositories, and the restricted record-policy fact loader.
 - `aegis/security/` - identity normalization, Argon2id password handling,
   authenticated MFA-secret encryption, and centralized TOTP rules.
 - `aegis/security/authentication_events.py` - bounded request context, controlled
@@ -202,10 +204,13 @@ authentication state.
   verification, replay protection, and disablement.
 - `aegis/services/mfa_challenges.py` - centralized challenge generation, hashing,
   requirement decisions, expiry, resolution, consumption, and revocation.
+- `aegis/services/authorization.py` and `aegis/services/intelligence_records.py`
+  - fail-closed conversion of current subject and record persistence into the
+  immutable inputs consumed by the central authorization evaluator.
 - `aegis/api/routes/authentication.py` and `aegis/api/dependencies.py` - HTTP
   login/session endpoints, transaction ownership, and central dependencies.
-- `tests/` - foundation, persistence, migration, password, and authentication
-  service tests.
+- `tests/` - foundation, persistence, migration, authentication, authorization,
+  synthetic-record, and resource-policy conversion tests.
 
 ## Known warnings and issues
 
@@ -344,5 +349,35 @@ the central policy before HTTP enforcement.
 Part 1 adds only an internal content-free resource-policy snapshot for evaluator
 tests. Classified-record persistence, record-department and record-compartment
 tables, record/search HTTP endpoints, broad route enforcement, assignment APIs,
-and persistent authorization audit storage remain unimplemented for later
-approved Phase 3 parts. Phase 3 Part 2 has not started.
+and persistent authorization audit storage remained unimplemented for later
+approved Phase 3 parts at the Part 1 checkpoint.
+
+## Phase 3 Part 2 boundary
+
+Part 2 is implemented and locally verified. Migration `20260823_0006` adds
+bounded synthetic intelligence records, controlled draft/active/retired
+lifecycle state, required classification and creator provenance, and normalized
+record-department and record-compartment relationships. Codes match canonical
+`INT-99999` form and are unique stable metadata only; neither a UUID, record code,
+nor creator identity grants access.
+
+A read-only record repository loads an immutable content-free policy-facts
+projection and never commits or decides. The record-policy service validates
+controlled classification name/rank pairs, lifecycle, timestamps, active
+departments, active compartments, and relationship integrity, then creates the
+existing `ResourcePolicy`. The accepted central `authorize()` evaluator remains
+the only decision engine. Shared controlled reference vocabularies keep subject
+and resource validation aligned.
+
+Draft and retired records are authorization-unusable. An active record with zero
+departments fails closed; zero departments never means unrestricted access. Zero
+record compartments means no compartment requirement, while all listed active
+compartments are required. The active-department cross-table invariant is not
+claimed as a database-only guarantee: a future authorized activation workflow
+must validate it transactionally.
+
+No record HTTP endpoints, CRUD/search/list API, authorization middleware,
+production record mutation workflow, record-code allocator, or persistent record
+audit storage exists. Future record and policy mutations require caller-owned
+transactions and atomic controlled audit evidence that never contains
+intelligence content. Phase 3 Part 3 has not started.
