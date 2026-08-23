@@ -8,9 +8,21 @@ are complete. Phase 2 implements user/password persistence, generic
 login-attempt security and non-persistent credential-audit logging, HTTP login,
 finite hash-only server-side sessions, and the encrypted service-layer TOTP
 credential foundation plus short-lived hash-only MFA challenges and final TOTP
-session issuance. **Phase 3 - Authorization & Classified Records has not
-started.** Authentication proves identity only and grants no authorization.
+session issuance. **Phase 3 - Authorization & Classified Records is in progress;
+Part 1 is implemented and locally verified.** Authentication still proves
+identity only and grants no authorization.
 PostgreSQL remains the application target and is not provisioned by this repository.
+
+Phase 3 Part 1 adds controlled role, department, clearance, and compartment
+reference data; normalized current user assignments; a separately loaded
+immutable `AuthorizationSubject`; a version-controlled role capability map; and
+a pure typed default-deny evaluator over content-free resource-policy snapshots.
+Existing users have nullable transitional department and clearance references,
+and missing authorization state denies. Classified-record tables, record/search
+endpoints, HTTP authorization enforcement, assignment APIs, and persistent
+authorization audit storage are not implemented yet. Role capability is only an
+input to continued evaluation and does not waive future action-specific
+workflow/context checks. Phase 3 Part 2 has not started.
 
 ## Local setup (Windows PowerShell)
 

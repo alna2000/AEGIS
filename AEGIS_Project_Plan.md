@@ -40,7 +40,15 @@ window, counter-based replay protection, disablement, and controlled TOTP audit
 semantics. Part 5 completed password-to-MFA challenge integration, hash-only
 short-lived challenge state, final session issuance, bypass/replay/transaction
 tests, and the Phase 2 security review. Phase 3 - Authorization & Classified
-Records has not started. Authentication state grants no authorization.
+Records is in progress. Part 1 implements normalized current subject attributes,
+server-side `AuthorizationSubject` loading, controlled reference data, an explicit
+version-controlled role capability map, and a pure typed default-deny policy over
+content-free resource snapshots. Authentication state still grants no
+authorization. Classified-record persistence, policy relationships, HTTP
+enforcement, assignment workflows, and persistent authorization audit storage
+remain for later Phase 3 parts. Role capability is only eligibility for further
+evaluation and does not waive future action-specific workflow/context checks.
+Phase 3 Part 2 has not started.
 
 ## Phase Completion and Handover Protocol
 

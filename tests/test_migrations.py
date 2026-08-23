@@ -1,10 +1,12 @@
 """Alembic migration smoke tests against an isolated disposable database."""
 
+from datetime import datetime, timezone
 from pathlib import Path
+import uuid
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import MetaData, Table, create_engine, inspect, select
 
 
 def test_authentication_migrations_upgrade_and_downgrade(tmp_path: Path) -> None:
@@ -28,6 +30,8 @@ def test_authentication_migrations_upgrade_and_downgrade(tmp_path: Path) -> None
         "created_at",
         "updated_at",
         "disabled_at",
+        "department_id",
+        "clearance_level_id",
     }
     unique_columns = {
         tuple(constraint["column_names"])
@@ -167,10 +171,187 @@ def test_authentication_migrations_upgrade_and_downgrade(tmp_path: Path) -> None
         "revoked_at",
         "expires_at",
     )
+    assert {
+        "roles",
+        "departments",
+        "clearance_levels",
+        "compartments",
+        "user_roles",
+        "user_compartments",
+    } <= set(inspector.get_table_names())
+
+    user_columns = {
+        column["name"]: column for column in inspector.get_columns("users")
+    }
+    assert user_columns["department_id"]["nullable"] is True
+    assert user_columns["clearance_level_id"]["nullable"] is True
+    user_authorization_foreign_keys = {
+        tuple(foreign_key["constrained_columns"]): foreign_key
+        for foreign_key in inspector.get_foreign_keys("users")
+        if foreign_key["constrained_columns"]
+        in (["department_id"], ["clearance_level_id"])
+    }
+    assert user_authorization_foreign_keys[("department_id",)][
+        "referred_table"
+    ] == "departments"
+    assert user_authorization_foreign_keys[("department_id",)]["options"][
+        "ondelete"
+    ] == "RESTRICT"
+    assert user_authorization_foreign_keys[("clearance_level_id",)][
+        "referred_table"
+    ] == "clearance_levels"
+    assert user_authorization_foreign_keys[("clearance_level_id",)]["options"][
+        "ondelete"
+    ] == "RESTRICT"
+
+    clearance_uniques = {
+        tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("clearance_levels")
+    }
+    assert {("name",), ("rank",)} <= clearance_uniques
+    clearance_checks = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("clearance_levels")
+    }
+    assert {
+        "ck_clearance_levels_name_rank_controlled",
+        "ck_clearance_levels_rank_positive",
+    } <= clearance_checks
+
+    assert tuple(
+        inspector.get_pk_constraint("user_roles")["constrained_columns"]
+    ) == ("user_id", "role_id")
+    assert tuple(
+        inspector.get_pk_constraint("user_compartments")["constrained_columns"]
+    ) == ("user_id", "compartment_id")
+    assert inspector.get_indexes("user_roles") == [
+        {
+            "name": "ix_user_roles_role_id",
+            "column_names": ["role_id"],
+            "unique": 0,
+            "dialect_options": {},
+        }
+    ]
+    assert inspector.get_indexes("user_compartments") == [
+        {
+            "name": "ix_user_compartments_compartment_id",
+            "column_names": ["compartment_id"],
+            "unique": 0,
+            "dialect_options": {},
+        }
+    ]
+    for table_name in ("user_roles", "user_compartments"):
+        assignment_foreign_keys = inspector.get_foreign_keys(table_name)
+        assert assignment_foreign_keys
+        assert all(
+            foreign_key["options"].get("ondelete") == "RESTRICT"
+            for foreign_key in assignment_foreign_keys
+        )
+
+    metadata = MetaData()
+    roles = Table("roles", metadata, autoload_with=engine)
+    departments = Table("departments", metadata, autoload_with=engine)
+    clearances = Table("clearance_levels", metadata, autoload_with=engine)
+    compartments = Table("compartments", metadata, autoload_with=engine)
+    with engine.connect() as connection:
+        assert set(connection.scalars(select(roles.c.name))) == {
+            "Analyst",
+            "Senior Analyst",
+            "Supervisor",
+            "Security Auditor",
+            "System Administrator",
+        }
+        assert set(connection.scalars(select(roles.c.is_active))) == {True}
+        assert set(connection.scalars(select(departments.c.name))) == {
+            "Cyber Intelligence",
+            "Counterintelligence",
+            "Strategic Analysis",
+            "Operations",
+        }
+        assert set(connection.scalars(select(departments.c.is_active))) == {True}
+        clearance_rows = connection.execute(
+            select(clearances.c.name, clearances.c.rank)
+        )
+        assert set(clearance_rows) == {
+            ("UNCLASSIFIED", 10),
+            ("CONFIDENTIAL", 20),
+            ("SECRET", 30),
+            ("TOP SECRET", 40),
+        }
+        assert set(connection.scalars(select(compartments.c.name))) == {
+            "NIGHTFALL",
+            "ORION",
+            "SENTINEL",
+        }
+        assert set(connection.scalars(select(compartments.c.is_active))) == {True}
     engine.dispose()
 
     command.downgrade(config, "base")
 
     engine = create_engine(database_url)
     assert "users" not in inspect(engine).get_table_names()
+    engine.dispose()
+
+
+def test_authorization_migration_preserves_existing_phase_2_user_and_downgrades(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "phase2-upgrade.sqlite3"
+    database_url = f"sqlite+pysqlite:///{database_path.as_posix()}"
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(config, "20260822_0004")
+
+    engine = create_engine(database_url)
+    users = Table("users", MetaData(), autoload_with=engine)
+    user_id = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    now = datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc)
+    with engine.begin() as connection:
+        connection.execute(
+            users.insert().values(
+                id=user_id.hex,
+                username="synthetic.legacy",
+                display_name="Synthetic Legacy User",
+                email=None,
+                password_hash="synthetic-nonempty-verifier",
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+                disabled_at=None,
+            )
+        )
+    engine.dispose()
+
+    command.upgrade(config, "20260822_0005")
+    engine = create_engine(database_url)
+    upgraded_users = Table("users", MetaData(), autoload_with=engine)
+    with engine.connect() as connection:
+        row = connection.execute(
+            select(
+                upgraded_users.c.department_id,
+                upgraded_users.c.clearance_level_id,
+            ).where(upgraded_users.c.id == user_id.hex)
+        ).one()
+    assert row.department_id is None
+    assert row.clearance_level_id is None
+    engine.dispose()
+
+    command.downgrade(config, "20260822_0004")
+    engine = create_engine(database_url)
+    downgraded_inspector = inspect(engine)
+    assert "roles" not in downgraded_inspector.get_table_names()
+    assert "user_roles" not in downgraded_inspector.get_table_names()
+    assert {
+        column["name"] for column in downgraded_inspector.get_columns("users")
+    } == {
+        "id",
+        "username",
+        "display_name",
+        "email",
+        "password_hash",
+        "is_active",
+        "created_at",
+        "updated_at",
+        "disabled_at",
+    }
     engine.dispose()

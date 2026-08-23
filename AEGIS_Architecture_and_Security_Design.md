@@ -1030,6 +1030,51 @@ requires possession of a current TOTP code; logout is idempotent. MFA enrollment
 credential disablement, account administration, and future authenticated browser
 state changes must not be exposed until a dedicated CSRF design is implemented.
 
-Phase 2 is complete. Phase 3 authorization and classified-record implementation
-have not started. Authentication establishes identity only and never grants
-roles, clearance, compartments, record access, or administrative authority.
+Phase 2 is complete. At its closure, Phase 3 authorization and classified-record
+implementation had not started. Authentication continues to establish identity
+only and never grants roles, clearance, compartments, record access, or
+administrative authority. Phase 3 Part 1 now implements the separate foundation
+described below.
+
+## Phase 3 Part 1 implementation status
+
+Phase 3 Part 1 implements current server-side authorization subject facts and a
+pure central policy boundary without adding classified-record persistence or HTTP
+authorization enforcement:
+
+- Revision `20260822_0005` adds controlled `roles`, `departments`,
+  `clearance_levels`, and `compartments` reference data with stable public UUIDs,
+  integrity constraints, and active/retired lifecycle state where applicable.
+  It adds current `user_roles` and `user_compartments` assignments with composite
+  keys, provenance, restrictive foreign keys, and no repository-owned commits.
+- Existing `users` rows gain nullable transitional `department_id` and
+  `clearance_level_id` references. No default assignment or backfill is inferred;
+  a missing value is an authorization denial. A later reviewed workflow may make
+  these columns required only after valid assignments exist.
+- `AuthenticatedPrincipal` remains the Phase 2 identity-only object. A read-only
+  repository and service reload current facts by its server-controlled user ID
+  and produce a separate immutable `AuthorizationSubject`. Client state and
+  session rows contain no authorization attributes.
+- The version-controlled policy defines controlled actions, resource types,
+  roles, explicit decisions, and internal deny reasons. Role capability is only
+  one prerequisite; intelligence access also requires controlled clearance rank,
+  an explicitly authorized active primary department, every required active
+  compartment, and a usable complete resource-policy snapshot.
+- Role capability permits evaluation to continue; it is not an unconditional
+  operational grant. In particular, Analyst `UPDATE` remains limited to future
+  approved workflows. Before any `CREATE`, `UPDATE`, `DELETE`, `EXPORT`,
+  `ADMINISTER`, or `AUDIT` endpoint relies on the central decision, its owning
+  Phase 3 part must add every applicable action-specific workflow/context check.
+  Part 1's content-free snapshot does not implement or waive those future checks.
+- The evaluator is deterministic, side-effect-free, database-independent, and
+  fail closed. Zero required compartments means no compartment requirement;
+  zero authorized departments means incomplete policy and denial. System
+  administration and security auditing do not imply intelligence access.
+
+The Part 1 resource representation contains policy facts only and is not an
+`intelligence_records` model or client schema. Record persistence and policy
+relationships, CRUD/search endpoints, backend endpoint enforcement, assignment
+workflows, persistent authorization audit evidence, and PostgreSQL RLS remain
+deferred to later approved Phase 3 parts. PostgreSQL migration SQL was rendered
+offline through `20260822_0005`; no live PostgreSQL runtime or concurrency claim
+is made. Phase 3 Part 2 has not started.

@@ -4,7 +4,9 @@
 Project: AEGIS - Classified Intelligence Access System
 Completed Phase: Phase 2 - Authentication & 2FA
 Status: COMPLETE
-Next Phase: Phase 3 - Authorization & Classified Records
+Current Phase: Phase 3 - Authorization & Classified Records
+Status: IN PROGRESS - Part 1 implemented and locally verified
+Next Part: Phase 3 Part 2
 Status: NOT STARTED
 ```
 
@@ -178,12 +180,12 @@ authentication state.
 - `Phase_1_Completion_Summary.md` - official Phase 1 checkpoint summary.
 - `Phase_2_Completion_Summary.md` - official Phase 2 implementation and security
   review summary.
-- `AEGIS_Phase3_Opening_Prompt.md` - mandatory next-chat handoff; Phase 3 remains
-  unstarted.
+- `AEGIS_Phase3_Opening_Prompt.md` - mandatory opening handoff used to begin
+  Phase 3.
 - `AEGIS_Decision_Log.md` - significant durable project decisions.
 - `pyproject.toml` - Python package, dependencies, and pytest configuration.
 - `alembic.ini` and `migrations/` - environment-backed migration configuration
-  and reviewed authentication schema migration.
+  and reviewed authentication/authorization-subject schema migrations.
 - `aegis/main.py` - FastAPI application factory and exported application.
 - `aegis/api/routes/system.py` - foundation status and health endpoints.
 - `aegis/core/config.py` - environment-based settings.
@@ -253,8 +255,20 @@ Phase 2 Part 3 is implemented, verified, and accepted for its Git/GitHub
 checkpoint. Git history is authoritative for the resulting commit identifier.
 Phase 2 Part 4 is implemented, verified, and accepted for its Git/GitHub
 checkpoint. Git history is authoritative for the resulting commit identifier.
-Phase 2 Part 5 and closure documentation are implemented and locally verified;
-the final Phase 2 Git/GitHub checkpoint remains to be created when authorized.
+Phase 2 Part 5, closure documentation, and the final Git/GitHub checkpoint are
+complete:
+
+```text
+Commit: 2c58fb0
+Message: Complete AEGIS Phase 2 authentication and 2FA
+Branch: main
+Remote: origin/main
+Ahead/behind: 0 / 0
+Working tree: clean
+Final checkpoint verification: 96 passed, 2 warnings in 11.30s
+Phase 2: COMPLETE
+Phase 3: NOT STARTED
+```
 
 Deployment status is **local development only**. PostgreSQL and all production or
 public deployment infrastructure remain unconfigured.
@@ -300,6 +314,35 @@ controls, deployment, and the future authorized account-disable workflow with
 transactional bulk session revocation. Current per-request session validation
 already denies disabled accounts immediately.
 
-Phase 2 is **COMPLETE**. Phase 3 is **NOT STARTED**. Phase 3 must begin with a
-small centralized authorization slice and must never infer permission from
-password, TOTP, challenge, or session success alone.
+Phase 2 is **COMPLETE**. At the Phase 2 checkpoint, Phase 3 was **NOT STARTED**
+and was required to begin with a small centralized authorization slice that
+never inferred permission from password, TOTP, challenge, or session success.
+Part 1 below implements that first slice without changing this separation.
+
+## Phase 3 Part 1 boundary
+
+Phase 3 is now **IN PROGRESS**. Part 1 is implemented and locally verified with
+146 passing tests. It adds controlled roles, departments, clearance levels, and
+compartments; current user-role and user-compartment assignments; and nullable
+transitional `users.department_id` / `users.clearance_level_id` foreign keys.
+Existing users receive no implicit assignment: missing authorization state is a
+denial.
+
+`AuthenticatedPrincipal` remains identity-only. A separate immutable
+`AuthorizationSubject` is loaded from current server-side persistence by user ID;
+roles or attributes are not cached in sessions or accepted from clients. The
+central pure evaluator returns typed `ALLOW` or `DENY` decisions using a small
+version-controlled role capability map plus mandatory classified-resource
+clearance, department, and all-required-compartment checks. Missing, inactive,
+invalid, stale, unsupported, or unevaluable state denies.
+
+Role capability only permits evaluation to continue. It is not an unconditional
+operational grant: Analyst `UPDATE` remains limited to future approved workflows,
+and later action-owning parts must add all applicable workflow/context checks to
+the central policy before HTTP enforcement.
+
+Part 1 adds only an internal content-free resource-policy snapshot for evaluator
+tests. Classified-record persistence, record-department and record-compartment
+tables, record/search HTTP endpoints, broad route enforcement, assignment APIs,
+and persistent authorization audit storage remain unimplemented for later
+approved Phase 3 parts. Phase 3 Part 2 has not started.

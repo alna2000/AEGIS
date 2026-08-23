@@ -12,6 +12,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Uuid,
     text,
@@ -31,6 +32,135 @@ def utc_now() -> datetime:
     """Return the current timezone-aware UTC timestamp."""
 
     return datetime.now(timezone.utc)
+
+
+class Role(Base):
+    """Controlled version-policy role reference data."""
+
+    __tablename__ = "roles"
+    __table_args__ = (
+        CheckConstraint(
+            "name IN ('Analyst', 'Senior Analyst', 'Supervisor', "
+            "'Security Auditor', 'System Administrator')",
+            name="ck_roles_name_controlled",
+        ),
+        CheckConstraint(
+            "description IS NULL OR length(description) BETWEEN 1 AND 256",
+            name="ck_roles_description_length",
+        ),
+        CheckConstraint(
+            "(is_active = true AND retired_at IS NULL) OR "
+            "(is_active = false AND retired_at IS NOT NULL)",
+            name="ck_roles_lifecycle_consistent",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    retired_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    user_assignments: Mapped[list[UserRole]] = relationship(
+        back_populates="role",
+        passive_deletes=True,
+    )
+
+
+class Department(Base):
+    """Controlled primary-department reference data."""
+
+    __tablename__ = "departments"
+    __table_args__ = (
+        CheckConstraint(
+            "name IN ('Cyber Intelligence', 'Counterintelligence', "
+            "'Strategic Analysis', 'Operations')",
+            name="ck_departments_name_controlled",
+        ),
+        CheckConstraint(
+            "description IS NULL OR length(description) BETWEEN 1 AND 256",
+            name="ck_departments_description_length",
+        ),
+        CheckConstraint(
+            "(is_active = true AND retired_at IS NULL) OR "
+            "(is_active = false AND retired_at IS NOT NULL)",
+            name="ck_departments_lifecycle_consistent",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    retired_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    users: Mapped[list[User]] = relationship(
+        back_populates="department",
+        passive_deletes=True,
+    )
+
+
+class ClearanceLevel(Base):
+    """Controlled immutable clearance/classification ordering."""
+
+    __tablename__ = "clearance_levels"
+    __table_args__ = (
+        CheckConstraint(
+            "(name = 'UNCLASSIFIED' AND rank = 10) OR "
+            "(name = 'CONFIDENTIAL' AND rank = 20) OR "
+            "(name = 'SECRET' AND rank = 30) OR "
+            "(name = 'TOP SECRET' AND rank = 40)",
+            name="ck_clearance_levels_name_rank_controlled",
+        ),
+        CheckConstraint("rank > 0", name="ck_clearance_levels_rank_positive"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    name: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    rank: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)
+
+    users: Mapped[list[User]] = relationship(
+        back_populates="clearance_level",
+        passive_deletes=True,
+    )
+
+
+class Compartment(Base):
+    """Controlled need-to-know compartment reference data."""
+
+    __tablename__ = "compartments"
+    __table_args__ = (
+        CheckConstraint(
+            "name IN ('NIGHTFALL', 'ORION', 'SENTINEL')",
+            name="ck_compartments_name_controlled",
+        ),
+        CheckConstraint(
+            "description IS NULL OR length(description) BETWEEN 1 AND 256",
+            name="ck_compartments_description_length",
+        ),
+        CheckConstraint(
+            "(is_active = true AND retired_at IS NULL) OR "
+            "(is_active = false AND retired_at IS NOT NULL)",
+            name="ck_compartments_lifecycle_consistent",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    name: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    retired_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    user_assignments: Mapped[list[UserCompartment]] = relationship(
+        back_populates="compartment",
+        passive_deletes=True,
+    )
 
 
 class User(Base):
@@ -85,6 +215,30 @@ class User(Base):
     disabled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    department_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("departments.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    clearance_level_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("clearance_levels.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    department: Mapped[Department | None] = relationship(back_populates="users")
+    clearance_level: Mapped[ClearanceLevel | None] = relationship(
+        back_populates="users"
+    )
+    role_assignments: Mapped[list[UserRole]] = relationship(
+        foreign_keys="UserRole.user_id",
+        back_populates="user",
+        passive_deletes=True,
+    )
+    compartment_assignments: Mapped[list[UserCompartment]] = relationship(
+        foreign_keys="UserCompartment.user_id",
+        back_populates="user",
+        passive_deletes=True,
+    )
     sessions: Mapped[list[UserSession]] = relationship(
         back_populates="user",
         passive_deletes=True,
@@ -115,6 +269,92 @@ class User(Base):
     @validates("email")
     def _canonicalize_email(self, _key: str, value: str | None) -> str | None:
         return normalize_email(value)
+
+
+class UserRole(Base):
+    """Current normalized user-to-role assignment with provenance."""
+
+    __tablename__ = "user_roles"
+    __table_args__ = (
+        CheckConstraint(
+            "assigned_by_user_id IS NULL OR assigned_by_user_id <> user_id",
+            name="ck_user_roles_no_self_assignment",
+        ),
+        Index("ix_user_roles_role_id", "role_id"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    role_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("roles.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=utc_now
+    )
+    # Null is reserved for migration/bootstrap operations; no HTTP assignment
+    # workflow exists in Phase 3 Part 1.
+    assigned_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+
+    user: Mapped[User] = relationship(
+        foreign_keys=[user_id], back_populates="role_assignments"
+    )
+    role: Mapped[Role] = relationship(back_populates="user_assignments")
+    assigned_by: Mapped[User | None] = relationship(
+        foreign_keys=[assigned_by_user_id]
+    )
+
+
+class UserCompartment(Base):
+    """Current normalized user-to-compartment assignment with provenance."""
+
+    __tablename__ = "user_compartments"
+    __table_args__ = (
+        CheckConstraint(
+            "assigned_by_user_id IS NULL OR assigned_by_user_id <> user_id",
+            name="ck_user_compartments_no_self_assignment",
+        ),
+        Index("ix_user_compartments_compartment_id", "compartment_id"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    compartment_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("compartments.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    assigned_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), nullable=False, default=utc_now
+    )
+    # Null is reserved for migration/bootstrap operations; no HTTP assignment
+    # workflow exists in Phase 3 Part 1.
+    assigned_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+
+    user: Mapped[User] = relationship(
+        foreign_keys=[user_id], back_populates="compartment_assignments"
+    )
+    compartment: Mapped[Compartment] = relationship(
+        back_populates="user_assignments"
+    )
+    assigned_by: Mapped[User | None] = relationship(
+        foreign_keys=[assigned_by_user_id]
+    )
 
 
 class UserSession(Base):
