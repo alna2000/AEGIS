@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, load_only, selectinload
 
 from aegis.db.models import (
+    ClearanceLevel,
     IntelligenceRecord,
     RecordCompartment,
     RecordDepartment,
@@ -61,6 +62,19 @@ class IntelligenceRecordPolicyFacts:
     compartment_relationships: tuple[RecordReferencePolicyFacts, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class IntelligenceRecordContent:
+    """Restricted post-authorization content projection for one record."""
+
+    id: uuid.UUID
+    record_code: str
+    title: str
+    summary: str | None
+    content: str
+    classification: str
+    status: str
+
+
 class IntelligenceRecordPolicyRepository:
     """Load record policy facts without deciding access or owning commits."""
 
@@ -70,9 +84,23 @@ class IntelligenceRecordPolicyRepository:
     def get_policy_record_by_id(
         self, record_id: uuid.UUID
     ) -> IntelligenceRecordPolicyFacts | None:
+        return self._get_policy_record(IntelligenceRecord.id == record_id)
+
+    def get_policy_record_by_code(
+        self, record_code: str
+    ) -> IntelligenceRecordPolicyFacts | None:
+        """Load content-free policy facts selected by exact record code."""
+
+        return self._get_policy_record(
+            IntelligenceRecord.record_code == record_code
+        )
+
+    def _get_policy_record(
+        self, criterion: object
+    ) -> IntelligenceRecordPolicyFacts | None:
         statement = (
             select(IntelligenceRecord)
-            .where(IntelligenceRecord.id == record_id)
+            .where(criterion)
             .options(
                 load_only(
                     IntelligenceRecord.id,
@@ -155,4 +183,43 @@ class IntelligenceRecordPolicyRepository:
             record_id=record_id,
             reference_id=reference_id,
             reference=converted,
+        )
+
+
+class IntelligenceRecordContentRepository:
+    """Load an explicit record representation only after caller authorization."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def get_content_record_by_id(
+        self, record_id: uuid.UUID
+    ) -> IntelligenceRecordContent | None:
+        statement = (
+            select(
+                IntelligenceRecord.id.label("id"),
+                IntelligenceRecord.record_code.label("record_code"),
+                IntelligenceRecord.title.label("title"),
+                IntelligenceRecord.summary.label("summary"),
+                IntelligenceRecord.content.label("content"),
+                ClearanceLevel.name.label("classification"),
+                IntelligenceRecord.status.label("status"),
+            )
+            .join(
+                ClearanceLevel,
+                ClearanceLevel.id == IntelligenceRecord.classification_level_id,
+            )
+            .where(IntelligenceRecord.id == record_id)
+        )
+        row = self._session.execute(statement).mappings().one_or_none()
+        if row is None:
+            return None
+        return IntelligenceRecordContent(
+            id=row["id"],
+            record_code=row["record_code"],
+            title=row["title"],
+            summary=row["summary"],
+            content=row["content"],
+            classification=row["classification"],
+            status=row["status"],
         )

@@ -1116,4 +1116,37 @@ PostgreSQL execution remain deferred. Future record create/update/retire/policy
 changes require caller-owned transactions and atomic controlled audit events such
 as `RECORD_CREATED`, `RECORD_UPDATED`, `RECORD_RETIRED`, and
 `RECORD_POLICY_CHANGED`; intelligence content must never enter those events.
-Phase 3 Part 3 has not started.
+At the Part 2 checkpoint, Phase 3 Part 3 had not started.
+
+## Phase 3 Part 3 implementation status
+
+Phase 3 Part 3 implements the first backend-enforced classified-record HTTP READ
+path without claiming broader workflow coverage:
+
+- `GET /records/{record_code}` accepts a normal path string so malformed and
+  differently cased identifiers enter the same hidden-resource workflow instead
+  of producing a framework-generated 422. The canonical code selects a candidate
+  only and never authorizes.
+- The accepted session boundary continues to return identity-only
+  `AuthenticatedPrincipal`. Each protected request reloads the current
+  `AuthorizationSubject` by server-controlled user ID; authorization attributes
+  are not stored in sessions or cookies.
+- Exact code lookup produces the existing content-free policy facts and
+  `ResourcePolicy`. Only the existing `authorize(subject, READ, policy)` decision
+  point evaluates role, clearance, department, compartments, and lifecycle.
+- Only explicit `ALLOW` permits a second repository query for a restricted scalar
+  content projection. That projection is selected by the server-resolved UUID and
+  checked against the authorized UUID, code, and classification rank before an
+  outward Pydantic response is built. ORM objects are never returned directly.
+- Missing, malformed, draft, retired, invalid-policy, and ordinarily denied
+  candidates share `404 {"detail":"Record not found"}`. Evaluator failures and
+  subject, policy, or content infrastructure failures use a generic 503. Neither
+  response serializes internal denial or policy detail.
+
+Search/list, CRUD, activation, retirement, policy mutation, assignment
+administration, persistent authorization auditing, generic authorization
+middleware, and state-changing CSRF work remain deferred. The authentication
+audit sink is not reused as authorization evidence. This GET route is safe and
+idempotent. Before concurrent record or policy mutation is introduced, its owning
+slice must address policy/content time-of-check-to-time-of-use with an explicit
+transaction or versioning design. Phase 3 remains in progress.

@@ -47,12 +47,16 @@ content-free resource snapshots. Part 2 implements bounded synthetic classified
 record persistence, normalized department/compartment policy relationships, a
 restricted read-only policy-fact repository, and fail-closed conversion into the
 existing `ResourcePolicy`. Authentication state still grants no authorization,
-and identifiers or creator provenance never authorize. HTTP enforcement,
-record CRUD/search/list, production mutation and activation workflows,
-assignment workflows, and persistent authorization audit storage remain for
-later Phase 3 parts. Role capability is only eligibility for further evaluation
-and does not waive future action-specific workflow/context checks. Phase 3 Part 3
-has not started.
+and identifiers or creator provenance never authorize. Part 3 implements the
+first protected single-record backend READ path: it reloads current subject state,
+authorizes content-free record policy through the existing evaluator, and loads
+an intentionally bounded content representation only after explicit `ALLOW`.
+Missing and inaccessible records share a generic external 404, while evaluator
+and infrastructure failures use a generic 503. Record CRUD/search/list,
+production mutation and activation workflows, assignment workflows, and
+persistent authorization audit storage remain for later Phase 3 parts. Role
+capability is only eligibility for further evaluation and does not waive future
+action-specific workflow/context checks. Phase 3 remains in progress.
 
 ## Phase Completion and Handover Protocol
 

@@ -15,6 +15,11 @@ from aegis.db.repositories import (
     SessionRepository,
     UserRepository,
 )
+from aegis.db.authorization_repositories import AuthorizationSubjectRepository
+from aegis.db.intelligence_record_repositories import (
+    IntelligenceRecordContentRepository,
+    IntelligenceRecordPolicyRepository,
+)
 from aegis.db.session import create_database_engine, create_session_factory
 from aegis.security.audit_sinks import LoggingAuthenticationAuditSink
 from aegis.security.authentication_events import AuthenticationAuditSink
@@ -25,6 +30,11 @@ from aegis.services.authentication import AuthenticatedPrincipal, Authentication
 from aegis.services.mfa import MfaService
 from aegis.services.mfa_challenges import MfaChallengeService
 from aegis.services.sessions import SessionService
+from aegis.services.authorization import AuthorizationSubjectService
+from aegis.services.intelligence_records import (
+    IntelligenceRecordPolicyService,
+    IntelligenceRecordReadService,
+)
 
 
 @lru_cache
@@ -144,3 +154,19 @@ def get_current_principal(
             detail="Authentication required",
         )
     return resolved.principal
+
+
+def get_intelligence_record_read_service(
+    database_session: Annotated[Session, Depends(get_db_session)],
+) -> IntelligenceRecordReadService:
+    """Compose the centralized policy-first classified-record read service."""
+
+    return IntelligenceRecordReadService(
+        AuthorizationSubjectService(
+            AuthorizationSubjectRepository(database_session)
+        ),
+        IntelligenceRecordPolicyService(
+            IntelligenceRecordPolicyRepository(database_session)
+        ),
+        IntelligenceRecordContentRepository(database_session),
+    )

@@ -6,21 +6,31 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
+from typing import Callable
 
 from aegis.db.intelligence_record_repositories import (
+    IntelligenceRecordContent,
+    IntelligenceRecordContentRepository,
     IntelligenceRecordPolicyFacts,
     IntelligenceRecordPolicyRepository,
     RecordReferencePolicyFacts,
 )
 from aegis.db.models import IntelligenceRecordStatus
 from aegis.security.authorization import (
+    AuthorizationAction,
+    AuthorizationDecision,
     AuthorizationDenyReason,
+    AuthorizationOutcome,
     AuthorizationResourceType,
     CONTROLLED_CLEARANCE_NAME_RANKS,
     CONTROLLED_COMPARTMENT_NAMES,
     CONTROLLED_DEPARTMENT_NAMES,
     ResourcePolicy,
+    authorize,
 )
+from aegis.services.authentication import AuthenticatedPrincipal
+from aegis.services.authorization import AuthorizationSubjectService
 
 
 _RECORD_CODE_PATTERN = re.compile(r"^INT-[0-9]{5}$")
@@ -74,6 +84,34 @@ class IntelligenceRecordPolicyService:
             )
         try:
             facts = self._records.get_policy_record_by_id(record_id)
+        except Exception:
+            return ResourcePolicyLoadResult.failure(
+                AuthorizationDenyReason.RESOURCE_LOAD_ERROR
+            )
+        if facts is None:
+            return ResourcePolicyLoadResult.failure(
+                AuthorizationDenyReason.RESOURCE_MISSING
+            )
+        try:
+            policy = self._convert(facts)
+        except Exception:
+            return ResourcePolicyLoadResult.failure(
+                AuthorizationDenyReason.INVALID_RESOURCE_POLICY
+            )
+        return ResourcePolicyLoadResult.success(facts.id, policy)
+
+    def load_by_record_code(self, record_code: str) -> ResourcePolicyLoadResult:
+        """Resolve an exact canonical code to content-free policy facts."""
+
+        if (
+            not isinstance(record_code, str)
+            or _RECORD_CODE_PATTERN.fullmatch(record_code) is None
+        ):
+            return ResourcePolicyLoadResult.failure(
+                AuthorizationDenyReason.RESOURCE_MISSING
+            )
+        try:
+            facts = self._records.get_policy_record_by_code(record_code)
         except Exception:
             return ResourcePolicyLoadResult.failure(
                 AuthorizationDenyReason.RESOURCE_LOAD_ERROR
@@ -188,3 +226,167 @@ def _valid_timestamp(value: object) -> bool:
         and value.tzinfo is not None
         and value.utcoffset() is not None
     )
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizedIntelligenceRecord:
+    """Validated service representation safe for the outward API schema."""
+
+    record_code: str
+    title: str
+    summary: str | None
+    content: str
+    classification: str
+
+
+class IntelligenceRecordReadOutcome(Enum):
+    AUTHORIZED = "AUTHORIZED"
+    INACCESSIBLE = "INACCESSIBLE"
+    AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+@dataclass(frozen=True, slots=True)
+class IntelligenceRecordReadResult:
+    """Controlled read outcome that cannot carry content unless authorized."""
+
+    outcome: IntelligenceRecordReadOutcome
+    record: AuthorizedIntelligenceRecord | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.outcome, IntelligenceRecordReadOutcome):
+            raise ValueError("record read outcome must be controlled")
+        if (self.outcome is IntelligenceRecordReadOutcome.AUTHORIZED) != (
+            isinstance(self.record, AuthorizedIntelligenceRecord)
+        ):
+            raise ValueError("only an authorized read may contain a record")
+
+    @classmethod
+    def authorized(
+        cls, record: AuthorizedIntelligenceRecord
+    ) -> IntelligenceRecordReadResult:
+        return cls(IntelligenceRecordReadOutcome.AUTHORIZED, record)
+
+    @classmethod
+    def inaccessible(cls) -> IntelligenceRecordReadResult:
+        return cls(IntelligenceRecordReadOutcome.INACCESSIBLE)
+
+    @classmethod
+    def authentication_required(cls) -> IntelligenceRecordReadResult:
+        return cls(IntelligenceRecordReadOutcome.AUTHENTICATION_REQUIRED)
+
+    @classmethod
+    def unavailable(cls) -> IntelligenceRecordReadResult:
+        return cls(IntelligenceRecordReadOutcome.UNAVAILABLE)
+
+
+class IntelligenceRecordReadService:
+    """Authorize one record candidate before loading its sensitive content."""
+
+    def __init__(
+        self,
+        subjects: AuthorizationSubjectService,
+        policies: IntelligenceRecordPolicyService,
+        content: IntelligenceRecordContentRepository,
+        *,
+        evaluator: Callable[..., AuthorizationDecision] = authorize,
+    ) -> None:
+        self._subjects = subjects
+        self._policies = policies
+        self._content = content
+        self._evaluator = evaluator
+
+    def read(
+        self,
+        principal: AuthenticatedPrincipal,
+        record_code: str,
+    ) -> IntelligenceRecordReadResult:
+        """Return content only after current facts produce explicit ALLOW."""
+
+        try:
+            subject_result = self._subjects.load(principal)
+            if (
+                subject_result.failure_reason
+                is AuthorizationDenyReason.SUBJECT_LOAD_ERROR
+            ):
+                return IntelligenceRecordReadResult.unavailable()
+            if subject_result.subject is None:
+                return IntelligenceRecordReadResult.authentication_required()
+            subject = subject_result.subject
+            if subject.account_usable is not True:
+                return IntelligenceRecordReadResult.authentication_required()
+
+            policy_result = self._policies.load_by_record_code(record_code)
+            if (
+                policy_result.failure_reason
+                is AuthorizationDenyReason.RESOURCE_LOAD_ERROR
+            ):
+                return IntelligenceRecordReadResult.unavailable()
+            if policy_result.policy is None or policy_result.record_id is None:
+                return IntelligenceRecordReadResult.inaccessible()
+
+            decision = self._evaluator(
+                subject,
+                AuthorizationAction.READ,
+                policy_result.policy,
+            )
+            if not isinstance(decision, AuthorizationDecision):
+                return IntelligenceRecordReadResult.unavailable()
+            if decision.outcome is not AuthorizationOutcome.ALLOW:
+                if (
+                    decision.deny_reason
+                    is AuthorizationDenyReason.POLICY_EVALUATION_ERROR
+                ):
+                    return IntelligenceRecordReadResult.unavailable()
+                return IntelligenceRecordReadResult.inaccessible()
+
+            loaded = self._content.get_content_record_by_id(policy_result.record_id)
+            if loaded is None:
+                return IntelligenceRecordReadResult.inaccessible()
+            authorized = self._validate_content(
+                loaded,
+                policy_result.record_id,
+                record_code,
+                policy_result.policy,
+            )
+            return IntelligenceRecordReadResult.authorized(authorized)
+        except Exception:
+            return IntelligenceRecordReadResult.unavailable()
+
+    @staticmethod
+    def _validate_content(
+        loaded: IntelligenceRecordContent,
+        authorized_id: uuid.UUID,
+        authorized_code: str,
+        policy: ResourcePolicy,
+    ) -> AuthorizedIntelligenceRecord:
+        if (
+            not isinstance(loaded, IntelligenceRecordContent)
+            or loaded.id != authorized_id
+            or loaded.record_code != authorized_code
+            or _RECORD_CODE_PATTERN.fullmatch(loaded.record_code) is None
+            or not isinstance(loaded.title, str)
+            or not 1 <= len(loaded.title) <= 160
+            or loaded.title != loaded.title.strip()
+            or (
+                loaded.summary is not None
+                and (
+                    not isinstance(loaded.summary, str)
+                    or not 1 <= len(loaded.summary) <= 1000
+                    or loaded.summary != loaded.summary.strip()
+                )
+            )
+            or not isinstance(loaded.content, str)
+            or not 1 <= len(loaded.content) <= 10000
+            or CONTROLLED_CLEARANCE_NAME_RANKS.get(loaded.classification)
+            != policy.classification_rank
+            or loaded.status != IntelligenceRecordStatus.ACTIVE.value
+        ):
+            raise ValueError("inconsistent authorized content projection")
+        return AuthorizedIntelligenceRecord(
+            record_code=loaded.record_code,
+            title=loaded.title,
+            summary=loaded.summary,
+            content=loaded.content,
+            classification=loaded.classification,
+        )

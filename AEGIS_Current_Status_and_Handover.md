@@ -6,8 +6,9 @@ Completed Phase: Phase 2 - Authentication & 2FA
 Status: COMPLETE
 Current Phase: Phase 3 - Authorization & Classified Records
 Phase 3 Part 1: COMPLETE / CHECKPOINTED
-Phase 3 Part 2: IMPLEMENTED / LOCALLY VERIFIED
-Phase 3 Part 3: NOT STARTED
+Phase 3 Part 2: COMPLETE / CHECKPOINTED
+Phase 3 Part 3: IMPLEMENTED / LOCALLY VERIFIED
+Phase 3 next part: NOT STARTED
 ```
 
 ## What AEGIS is
@@ -145,11 +146,10 @@ remaining PostgreSQL entities and relationships, session storage, MFA storage,
 audit events, deletion behavior, database privilege separation, and optional RLS
 defense in depth.
 
-PostgreSQL infrastructure, authorization enforcement, classified records,
-frontend, bot protection, persistent audit storage, and deployment remain
-unimplemented. Department and clearance
-relationships will extend the existing user model later; they are not needed for
-authentication state.
+PostgreSQL infrastructure, broader authorization workflows, frontend, bot
+protection, persistent audit storage, and deployment remain unimplemented.
+Authentication state remains identity-only even though current authorization
+facts and classified records now exist in their owning Phase 3 boundaries.
 
 ## Important security decisions
 
@@ -376,8 +376,30 @@ compartments are required. The active-department cross-table invariant is not
 claimed as a database-only guarantee: a future authorized activation workflow
 must validate it transactionally.
 
-No record HTTP endpoints, CRUD/search/list API, authorization middleware,
-production record mutation workflow, record-code allocator, or persistent record
-audit storage exists. Future record and policy mutations require caller-owned
-transactions and atomic controlled audit evidence that never contains
-intelligence content. Phase 3 Part 3 has not started.
+At the Part 2 checkpoint no record HTTP endpoint existed. CRUD/search/list,
+production record mutation, record-code allocation, and persistent record audit
+storage remained deferred to later reviewed parts.
+
+## Phase 3 Part 3 boundary
+
+Part 3 is implemented and locally verified. `GET /records/{record_code}` is the
+first classified-record HTTP path protected by current backend authorization.
+The existing session dependency resolves identity only, after which the read
+service reloads the current `AuthorizationSubject`, resolves an exact canonical
+record code to content-free policy facts, converts the existing `ResourcePolicy`,
+and calls the existing `authorize(subject, READ, policy)` evaluator.
+
+Only explicit `ALLOW` triggers a separate scalar content projection selected by
+the server-resolved internal record UUID. The returned projection is checked
+against the authorized UUID, record code, and classification rank before a
+dedicated outward response is created. Record codes select candidates and never
+authorize. Missing, malformed, draft, retired, invalid-policy, and ordinarily
+denied candidates all use the same generic external 404. Subject/policy/content
+infrastructure failures and evaluator failures use a generic 503. Internal deny
+reasons and protected policy facts are never serialized.
+
+This slice does not add search/list, record mutation, assignment administration,
+generic authorization middleware, CSRF-sensitive state changes, or persistent
+authorization auditing. It does not claim that all classified-record workflows
+are protected. Policy/content TOCTOU must be addressed before concurrent record
+or policy mutation workflows are introduced. Phase 3 remains **IN PROGRESS**.

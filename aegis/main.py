@@ -6,6 +6,9 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import JSONResponse
 
 from aegis.api.routes.authentication import router as authentication_router
+from aegis.api.routes.intelligence_records import (
+    router as intelligence_records_router,
+)
 from aegis.api.routes.system import router as system_router
 from aegis.core.config import get_settings
 
@@ -17,6 +20,7 @@ def create_app() -> FastAPI:
     application = FastAPI(title=settings.app_name, debug=settings.debug)
     application.include_router(system_router)
     application.include_router(authentication_router)
+    application.include_router(intelligence_records_router)
 
     @application.exception_handler(RequestValidationError)
     async def sanitized_login_validation_error(
