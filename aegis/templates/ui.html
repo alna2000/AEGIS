@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="AEGIS synthetic cybersecurity learning environment">
+    <title>AEGIS | Secure Access</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/aegis.css') }}">
+    <script type="module" src="{{ url_for('static', path='js/aegis-ui.js') }}"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#primary-content">Skip to main content</a>
+
+    <div class="environment-banner" role="note">
+      <span class="environment-marker" aria-hidden="true"></span>
+      Synthetic cybersecurity learning environment
+    </div>
+
+    <header class="site-header">
+      <a class="brand" href="/ui" aria-label="AEGIS secure access home">
+        <span class="brand-mark" aria-hidden="true">A</span>
+        <span>
+          <strong>AEGIS</strong>
+          <small>Classified Intelligence Access System</small>
+        </span>
+      </a>
+      <div class="system-state" aria-label="Application environment">
+        <span class="status-dot" aria-hidden="true"></span>
+        Local training system
+      </div>
+    </header>
+
+    <main id="primary-content" class="application-frame" tabindex="-1">
+      <section class="mission-panel" aria-labelledby="mission-title">
+        <p class="eyebrow">Controlled access gateway</p>
+        <h1 id="mission-title">Intelligence starts with verified identity.</h1>
+        <p class="mission-copy">
+          AEGIS is a fictional environment for learning secure application design.
+          All identities, credentials, and operational data are synthetic.
+        </p>
+        <dl class="principles" aria-label="AEGIS design principles">
+          <div>
+            <dt>Identity</dt>
+            <dd>Server-verified</dd>
+          </div>
+          <div>
+            <dt>Credentials</dt>
+            <dd>Browser-managed</dd>
+          </div>
+          <div>
+            <dt>Access</dt>
+            <dd>Backend-enforced</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="access-panel" aria-label="AEGIS authentication">
+        <div id="global-status" class="sr-only" role="status" aria-live="polite"></div>
+
+        <section id="state-bootstrapping" class="state-panel loading-panel" aria-labelledby="bootstrapping-title">
+          <div class="spinner" aria-hidden="true"></div>
+          <p class="eyebrow">Secure channel</p>
+          <h2 id="bootstrapping-title">Verifying session</h2>
+          <p>Checking for an active authenticated identity.</p>
+        </section>
+
+        <section id="state-login" class="state-panel" aria-labelledby="login-title" hidden>
+          <p class="eyebrow">Operator access</p>
+          <h2 id="login-title">Sign in to AEGIS</h2>
+          <p class="panel-intro">Use authorized synthetic training credentials.</p>
+
+          <form id="login-form" method="post" action="/auth/login" novalidate>
+            <div class="field-group">
+              <label for="username">Username</label>
+              <input id="username" name="username" type="text" autocomplete="username" required>
+            </div>
+            <div class="field-group">
+              <label for="password">Password</label>
+              <input id="password" name="password" type="password" autocomplete="current-password" required>
+            </div>
+            <p id="login-error" class="form-message" role="alert" hidden></p>
+            <button id="login-submit" class="primary-action" type="submit">
+              <span>Verify identity</span>
+              <span class="button-progress" aria-hidden="true">Processing</span>
+            </button>
+          </form>
+        </section>
+
+        <section id="state-mfa" class="state-panel" aria-labelledby="mfa-title" hidden>
+          <p class="eyebrow">Second factor required</p>
+          <h2 id="mfa-title">Enter verification code</h2>
+          <p class="panel-intro">Enter the current six-digit code from the configured authenticator.</p>
+
+          <form id="mfa-form" method="post" action="/auth/mfa/totp/verify" novalidate>
+            <div class="field-group">
+              <label for="totp-code">Six-digit code</label>
+              <input
+                id="totp-code"
+                class="code-input"
+                name="code"
+                type="text"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                pattern="[0-9]{6}"
+                minlength="6"
+                maxlength="6"
+                required
+              >
+            </div>
+            <p id="mfa-error" class="form-message" role="alert" hidden></p>
+            <button id="mfa-submit" class="primary-action" type="submit">
+              <span>Complete verification</span>
+              <span class="button-progress" aria-hidden="true">Processing</span>
+            </button>
+            <button id="mfa-cancel" class="text-action" type="button">Cancel and return to sign in</button>
+          </form>
+        </section>
+
+        <section id="state-authenticated" class="state-panel shell-panel" aria-labelledby="authenticated-title" hidden>
+          <div class="identity-heading">
+            <div class="identity-avatar" aria-hidden="true">ID</div>
+            <div>
+              <p class="eyebrow">Identity confirmed</p>
+              <h2 id="authenticated-title" tabindex="-1">Welcome, <span id="display-name"></span></h2>
+              <p id="identity-username" class="identity-username"></p>
+            </div>
+          </div>
+
+          <div class="workspace-placeholder">
+            <p class="eyebrow">Workspace</p>
+            <h3>Secure workspace foundation ready</h3>
+            <p>Additional approved read-only modules will appear in later project phases.</p>
+          </div>
+
+          <p id="logout-error" class="form-message" role="alert" hidden></p>
+          <button id="logout-button" class="secondary-action" type="button">Sign out securely</button>
+        </section>
+
+        <section id="state-service-unavailable" class="state-panel error-panel" aria-labelledby="service-title" hidden>
+          <p class="eyebrow">Connection unavailable</p>
+          <h2 id="service-title" tabindex="-1">Authentication service unavailable</h2>
+          <p>The secure authentication service cannot respond right now. No access decision has been made.</p>
+          <button class="secondary-action retry-action" type="button">Retry connection</button>
+        </section>
+
+        <section id="state-unexpected-error" class="state-panel error-panel" aria-labelledby="unexpected-title" hidden>
+          <p class="eyebrow">Request interrupted</p>
+          <h2 id="unexpected-title" tabindex="-1">Unable to complete the request</h2>
+          <p>An unexpected response was received. Try the secure connection again.</p>
+          <button class="secondary-action retry-action" type="button">Retry connection</button>
+        </section>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>AEGIS portfolio environment · Synthetic data only · Local development</p>
+    </footer>
+  </body>
+</html>

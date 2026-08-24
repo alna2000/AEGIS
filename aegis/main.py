@@ -1,16 +1,23 @@
 """FastAPI application entry point."""
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from aegis.api.routes.authentication import router as authentication_router
 from aegis.api.routes.intelligence_records import (
     router as intelligence_records_router,
 )
 from aegis.api.routes.system import router as system_router
+from aegis.api.routes.ui import router as ui_router
 from aegis.core.config import get_settings
+
+
+_PACKAGE_ROOT = Path(__file__).resolve().parent
 
 
 def create_app() -> FastAPI:
@@ -21,6 +28,12 @@ def create_app() -> FastAPI:
     application.include_router(system_router)
     application.include_router(authentication_router)
     application.include_router(intelligence_records_router)
+    application.include_router(ui_router)
+    application.mount(
+        "/static",
+        StaticFiles(directory=_PACKAGE_ROOT / "static"),
+        name="static",
+    )
 
     @application.exception_handler(RequestValidationError)
     async def sanitized_login_validation_error(
