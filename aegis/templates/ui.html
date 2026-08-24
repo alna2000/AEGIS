@@ -126,11 +126,48 @@
             </div>
           </div>
 
-          <div class="workspace-placeholder">
-            <p class="eyebrow">Workspace</p>
-            <h3>Secure workspace foundation ready</h3>
-            <p>Additional approved read-only modules will appear in later project phases.</p>
-          </div>
+          <section class="record-workspace" aria-labelledby="records-title">
+            <header class="record-workspace-heading">
+              <p class="eyebrow">Read-only workspace</p>
+              <h3 id="records-title">Available intelligence records</h3>
+              <p>
+                Synthetic metadata returned for this authenticated session by the
+                classified record service.
+              </p>
+            </header>
+
+            <div id="records-status" class="sr-only" role="status" aria-live="polite"></div>
+
+            <section id="records-state-idle" class="record-state" aria-label="Record workspace preparing">
+              <p>Preparing the authorized record workspace.</p>
+            </section>
+
+            <section id="records-state-loading" class="record-state records-loading" aria-label="Records loading" hidden>
+              <div class="spinner spinner-small" aria-hidden="true"></div>
+              <p>Loading available record metadata.</p>
+            </section>
+
+            <section id="records-state-ready" class="record-state" aria-label="Available records" hidden>
+              <ul id="record-list" class="record-list" aria-label="Records returned for this session"></ul>
+            </section>
+
+            <section id="records-state-empty" class="record-state records-message" aria-labelledby="records-empty-title" hidden>
+              <h4 id="records-empty-title">No records currently available</h4>
+              <p>No records are currently available to this authenticated session.</p>
+            </section>
+
+            <section id="records-state-service-unavailable" class="record-state records-message" aria-labelledby="records-service-title" hidden>
+              <h4 id="records-service-title" tabindex="-1">Record service unavailable</h4>
+              <p>The classified record service cannot respond right now.</p>
+              <button class="secondary-action record-retry-action" type="button">Retry record request</button>
+            </section>
+
+            <section id="records-state-unexpected-error" class="record-state records-message" aria-labelledby="records-unexpected-title" hidden>
+              <h4 id="records-unexpected-title" tabindex="-1">Unable to load records</h4>
+              <p>An unexpected response was received. No record metadata was displayed.</p>
+              <button class="secondary-action record-retry-action" type="button">Retry record request</button>
+            </section>
+          </section>
 
           <p id="logout-error" class="form-message" role="alert" hidden></p>
           <button id="logout-button" class="secondary-action" type="button">Sign out securely</button>

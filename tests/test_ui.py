@@ -69,9 +69,43 @@ def test_ui_contains_no_authorization_or_credential_material() -> None:
         "aegis_mfa_challenge",
         "localstorage",
         "sessionstorage",
-        "/records",
     ):
         assert forbidden not in combined
+
+
+def test_authenticated_shell_contains_accessible_record_states() -> None:
+    with ui_client() as client:
+        response = client.get("/ui")
+
+    assert 'class="record-workspace" aria-labelledby="records-title"' in response.text
+    assert 'id="records-status" class="sr-only" role="status"' in response.text
+    for state in (
+        "records-state-idle",
+        "records-state-loading",
+        "records-state-ready",
+        "records-state-empty",
+        "records-state-service-unavailable",
+        "records-state-unexpected-error",
+    ):
+        assert f'id="{state}"' in response.text
+    assert '<ul id="record-list" class="record-list"' in response.text
+    assert "No records are currently available to this authenticated session." in response.text
+    assert 'id="records-service-title" tabindex="-1"' in response.text
+    assert 'id="records-unexpected-title" tabindex="-1"' in response.text
+
+
+def test_record_workspace_introduces_no_unsupported_controls() -> None:
+    with ui_client() as client:
+        response = client.get("/ui")
+
+    lowered = response.text.lower()
+    assert 'type="search"' not in lowered
+    assert "classification filter" not in lowered
+    assert "department filter" not in lowered
+    assert "pagination" not in lowered
+    assert "total records" not in lowered
+    assert "hidden records" not in lowered
+    assert "record detail" not in lowered
 
 
 def test_static_assets_are_local_and_available() -> None:
@@ -103,6 +137,55 @@ def test_ui_script_uses_only_existing_authentication_endpoints() -> None:
     }
     assert 'credentials: "same-origin"' in script
     assert "document.cookie" not in script
+
+
+def test_ui_script_uses_only_the_record_collection_endpoint() -> None:
+    with ui_client() as client:
+        script = client.get("/static/js/aegis-ui.js").text
+
+    assert set(re.findall(r'"(/records[^" ]*)"', script)) == {"/records"}
+    assert 'records: "/records"' in script
+    assert '"/records/' not in script
+
+
+def test_record_rendering_uses_safe_dom_construction() -> None:
+    with ui_client() as client:
+        script = client.get("/static/js/aegis-ui.js").text
+
+    for forbidden in (
+        "innerHTML",
+        "insertAdjacentHTML",
+        "document.write",
+        "localStorage",
+        "sessionStorage",
+        "document.cookie",
+        "new Function",
+    ):
+        assert forbidden not in script
+    assert 'document.createElement("li")' in script
+    assert 'document.createElement("article")' in script
+    assert "code.textContent = record.record_code;" in script
+    assert "title.textContent = record.title;" in script
+    assert "classification.textContent = record.classification;" in script
+
+
+def test_collection_flow_is_guarded_and_fails_closed_structurally() -> None:
+    with ui_client() as client:
+        script = client.get("/static/js/aegis-ui.js").text
+
+    assert "const RECORD_STATES = Object.freeze" in script
+    assert "let recordLoadInProgress = false;" in script
+    assert "let recordRequestVersion = 0;" in script
+    assert "function recordRequestIsCurrent(version)" in script
+    assert "if (currentState !== UI_STATES.AUTHENTICATED || recordLoadInProgress)" in script
+    assert "const records = validateRecordCollection(payload);" in script
+    assert "if (records === null)" in script
+    assert "if (records.length === 0)" in script
+    assert "if (response.status === 401)" in script
+    assert "clearAuthenticatedPresentation();" in script
+    assert "if (response.status === 503)" in script
+    assert "void loadRecords();" in script
+    assert "recordRequestVersion += 1;" in script
 
 
 def test_mfa_operations_share_one_exclusion_guard() -> None:

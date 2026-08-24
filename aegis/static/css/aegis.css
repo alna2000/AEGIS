@@ -290,7 +290,7 @@ button {
 
 .panel-intro,
 .state-panel > p:not(.eyebrow, .form-message),
-.workspace-placeholder p {
+.record-workspace p {
   color: var(--muted);
   line-height: 1.6;
 }
@@ -464,21 +464,147 @@ button[aria-busy="true"] .button-progress {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
-.workspace-placeholder {
+.shell-panel {
+  max-width: none;
+}
+
+.record-workspace {
   margin-top: 2.2rem;
-  padding: 1.35rem;
+}
+
+.record-workspace-heading {
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.record-workspace-heading h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.record-workspace-heading p:last-child {
+  max-width: 58ch;
+  margin: 0.65rem 0 0;
+  font-size: 0.9rem;
+}
+
+.record-state {
+  min-height: 7rem;
+  padding-top: 1.2rem;
+}
+
+.record-state > p:first-child {
+  margin-top: 0;
+}
+
+.records-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.records-loading p {
+  margin: 0;
+}
+
+.spinner-small {
+  width: 1.65rem;
+  height: 1.65rem;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.record-list {
+  display: grid;
+  gap: 0.8rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.record-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem 1rem;
+  align-items: center;
+  padding: 1rem;
   background: rgb(112 217 220 / 4%);
   border: 1px solid var(--line);
 }
 
-.workspace-placeholder h3 {
+.record-code {
+  margin: 0 0 0.35rem;
+  color: var(--accent);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+.record-title {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.classification-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line-strong);
+  color: #dce7e9;
+  background: #0a1519;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.classification-label::before {
+  width: 0.42rem;
+  height: 0.42rem;
+  content: "";
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.classification-unclassified {
+  color: #a8d8b0;
+}
+
+.classification-confidential {
+  color: #9fcde7;
+}
+
+.classification-secret {
+  color: #e0c47f;
+}
+
+.classification-top-secret {
+  color: #f1a29b;
+}
+
+.records-message {
+  padding-left: 1rem;
+  border-left: 3px solid var(--signal);
+}
+
+.records-message h4 {
   margin: 0;
   font-size: 1rem;
 }
 
-.workspace-placeholder p:last-child {
+.records-message p {
   margin-bottom: 0;
   font-size: 0.9rem;
+}
+
+.record-retry-action {
+  width: auto;
+  min-height: 2.7rem;
+  margin-top: 1rem;
 }
 
 .error-panel {
@@ -574,6 +700,14 @@ button[aria-busy="true"] .button-progress {
 
   .principles dd {
     margin-top: 0;
+  }
+
+  .record-card {
+    grid-template-columns: 1fr;
+  }
+
+  .classification-label {
+    justify-self: start;
   }
 
   .site-footer {

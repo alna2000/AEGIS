@@ -14,7 +14,30 @@ const API_PATHS = Object.freeze({
   login: "/auth/login",
   mfa: "/auth/mfa/totp/verify",
   logout: "/auth/logout",
+  records: "/records",
 });
+
+const RECORD_STATES = Object.freeze({
+  IDLE: "RECORDS_IDLE",
+  LOADING: "RECORDS_LOADING",
+  READY: "RECORDS_READY",
+  EMPTY: "RECORDS_EMPTY",
+  SERVICE_UNAVAILABLE: "RECORDS_SERVICE_UNAVAILABLE",
+  UNEXPECTED_ERROR: "RECORDS_UNEXPECTED_ERROR",
+});
+
+const RECORD_CLASSIFICATION_CLASSES = new Map([
+  ["UNCLASSIFIED", "classification-unclassified"],
+  ["CONFIDENTIAL", "classification-confidential"],
+  ["SECRET", "classification-secret"],
+  ["TOP SECRET", "classification-top-secret"],
+]);
+
+const RECORD_RESPONSE_FIELDS = Object.freeze([
+  "classification",
+  "record_code",
+  "title",
+]);
 
 const panels = Object.freeze({
   [UI_STATES.BOOTSTRAPPING]: document.querySelector("#state-bootstrapping"),
@@ -43,9 +66,26 @@ const logoutButton = document.querySelector("#logout-button");
 const logoutError = document.querySelector("#logout-error");
 const serviceTitle = document.querySelector("#service-title");
 const unexpectedTitle = document.querySelector("#unexpected-title");
+const recordsStatus = document.querySelector("#records-status");
+const recordList = document.querySelector("#record-list");
+const recordsServiceTitle = document.querySelector("#records-service-title");
+const recordsUnexpectedTitle = document.querySelector("#records-unexpected-title");
+const recordRetryButtons = document.querySelectorAll(".record-retry-action");
+
+const recordPanels = Object.freeze({
+  [RECORD_STATES.IDLE]: document.querySelector("#records-state-idle"),
+  [RECORD_STATES.LOADING]: document.querySelector("#records-state-loading"),
+  [RECORD_STATES.READY]: document.querySelector("#records-state-ready"),
+  [RECORD_STATES.EMPTY]: document.querySelector("#records-state-empty"),
+  [RECORD_STATES.SERVICE_UNAVAILABLE]: document.querySelector("#records-state-service-unavailable"),
+  [RECORD_STATES.UNEXPECTED_ERROR]: document.querySelector("#records-state-unexpected-error"),
+});
 
 let currentState = UI_STATES.BOOTSTRAPPING;
 let mfaOperationInProgress = false;
+let currentRecordState = RECORD_STATES.IDLE;
+let recordLoadInProgress = false;
+let recordRequestVersion = 0;
 
 function announce(message) {
   globalStatus.textContent = "";
@@ -83,6 +123,57 @@ function setState(nextState, announcement = "") {
 function setMessage(element, message) {
   element.textContent = message;
   element.hidden = !message;
+}
+
+function announceRecordStatus(message) {
+  recordsStatus.textContent = "";
+  window.requestAnimationFrame(() => {
+    recordsStatus.textContent = message;
+  });
+}
+
+function setRecordState(nextState, announcement = "") {
+  currentRecordState = nextState;
+  for (const [state, panel] of Object.entries(recordPanels)) {
+    panel.hidden = state !== nextState;
+  }
+  if (announcement) {
+    announceRecordStatus(announcement);
+  }
+  if (nextState === RECORD_STATES.SERVICE_UNAVAILABLE) {
+    recordsServiceTitle.focus();
+  } else if (nextState === RECORD_STATES.UNEXPECTED_ERROR) {
+    recordsUnexpectedTitle.focus();
+  }
+}
+
+function setRecordRetryBusy(busy) {
+  for (const button of recordRetryButtons) {
+    button.disabled = busy;
+    button.setAttribute("aria-busy", String(busy));
+  }
+}
+
+function clearRecordEntries() {
+  recordList.replaceChildren();
+}
+
+function cancelRecordLoad() {
+  recordRequestVersion += 1;
+  recordLoadInProgress = false;
+  setRecordRetryBusy(false);
+}
+
+function clearRecordWorkspace() {
+  cancelRecordLoad();
+  clearRecordEntries();
+  setRecordState(RECORD_STATES.IDLE);
+}
+
+function clearAuthenticatedPresentation() {
+  displayName.textContent = "";
+  identityUsername.textContent = "";
+  clearRecordWorkspace();
 }
 
 function setSubmitting(button, submitting) {
@@ -132,6 +223,149 @@ async function request(path, options = {}) {
   });
 }
 
+function validateRecordCollection(payload) {
+  if (!Array.isArray(payload)) {
+    return null;
+  }
+
+  const records = [];
+  for (const entry of payload) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      return null;
+    }
+    const fields = Object.keys(entry).sort();
+    if (
+      fields.length !== RECORD_RESPONSE_FIELDS.length ||
+      !fields.every((field, index) => field === RECORD_RESPONSE_FIELDS[index]) ||
+      typeof entry.record_code !== "string" ||
+      entry.record_code.trim().length === 0 ||
+      typeof entry.title !== "string" ||
+      entry.title.trim().length === 0 ||
+      typeof entry.classification !== "string" ||
+      !RECORD_CLASSIFICATION_CLASSES.has(entry.classification)
+    ) {
+      return null;
+    }
+    records.push({
+      record_code: entry.record_code,
+      title: entry.title,
+      classification: entry.classification,
+    });
+  }
+  return records;
+}
+
+function renderRecordCollection(records) {
+  const fragment = document.createDocumentFragment();
+  for (const record of records) {
+    const item = document.createElement("li");
+    const card = document.createElement("article");
+    const identity = document.createElement("div");
+    const code = document.createElement("p");
+    const title = document.createElement("h4");
+    const classification = document.createElement("span");
+
+    item.className = "record-item";
+    card.className = "record-card";
+    code.className = "record-code";
+    title.className = "record-title";
+    classification.classList.add(
+      "classification-label",
+      RECORD_CLASSIFICATION_CLASSES.get(record.classification),
+    );
+
+    code.textContent = record.record_code;
+    title.textContent = record.title;
+    classification.textContent = record.classification;
+
+    identity.append(code, title);
+    card.append(identity, classification);
+    item.append(card);
+    fragment.append(item);
+  }
+  recordList.replaceChildren(fragment);
+}
+
+function recordRequestIsCurrent(version) {
+  return (
+    version === recordRequestVersion &&
+    currentState === UI_STATES.AUTHENTICATED
+  );
+}
+
+async function loadRecords() {
+  if (currentState !== UI_STATES.AUTHENTICATED || recordLoadInProgress) {
+    return;
+  }
+
+  recordLoadInProgress = true;
+  const requestVersion = ++recordRequestVersion;
+  clearRecordEntries();
+  setRecordRetryBusy(true);
+  setRecordState(RECORD_STATES.LOADING, "Loading available record metadata.");
+
+  try {
+    const response = await request(API_PATHS.records);
+    if (!recordRequestIsCurrent(requestVersion)) {
+      return;
+    }
+    if (response.status === 401) {
+      clearAuthenticatedPresentation();
+      setState(UI_STATES.LOGIN, "Your session is no longer available. Sign in again.");
+      return;
+    }
+    if (response.status === 503) {
+      setRecordState(
+        RECORD_STATES.SERVICE_UNAVAILABLE,
+        "Classified record service unavailable.",
+      );
+      return;
+    }
+    if (response.status !== 200) {
+      setRecordState(
+        RECORD_STATES.UNEXPECTED_ERROR,
+        "Unable to load record metadata.",
+      );
+      return;
+    }
+
+    const payload = await response.json();
+    if (!recordRequestIsCurrent(requestVersion)) {
+      return;
+    }
+    const records = validateRecordCollection(payload);
+    if (records === null) {
+      setRecordState(
+        RECORD_STATES.UNEXPECTED_ERROR,
+        "Unable to load record metadata.",
+      );
+      return;
+    }
+    if (records.length === 0) {
+      setRecordState(
+        RECORD_STATES.EMPTY,
+        "No records are currently available to this authenticated session.",
+      );
+      return;
+    }
+
+    renderRecordCollection(records);
+    setRecordState(RECORD_STATES.READY, "Available record metadata loaded.");
+  } catch {
+    if (recordRequestIsCurrent(requestVersion)) {
+      setRecordState(
+        RECORD_STATES.UNEXPECTED_ERROR,
+        "Unable to load record metadata.",
+      );
+    }
+  } finally {
+    if (requestVersion === recordRequestVersion) {
+      recordLoadInProgress = false;
+      setRecordRetryBusy(false);
+    }
+  }
+}
+
 function showServiceUnavailable() {
   setState(
     UI_STATES.AUTHENTICATION_SERVICE_UNAVAILABLE,
@@ -144,6 +378,7 @@ function showUnexpectedError() {
 }
 
 async function resolveIdentity() {
+  clearAuthenticatedPresentation();
   setState(UI_STATES.BOOTSTRAPPING, "Verifying authenticated identity.");
 
   try {
@@ -175,6 +410,7 @@ async function resolveIdentity() {
     displayName.textContent = identity.display_name;
     identityUsername.textContent = `@${identity.username}`;
     setState(UI_STATES.AUTHENTICATED, "Authenticated identity confirmed.");
+    void loadRecords();
   } catch {
     showUnexpectedError();
   }
@@ -284,6 +520,12 @@ mfaForm.addEventListener("submit", async (event) => {
 });
 
 async function logout({ errorTarget, button, manageButton = true }) {
+  const shouldResumeRecordLoad =
+    currentState === UI_STATES.AUTHENTICATED &&
+    currentRecordState === RECORD_STATES.LOADING;
+  if (currentState === UI_STATES.AUTHENTICATED) {
+    cancelRecordLoad();
+  }
   setMessage(errorTarget, "");
   if (manageButton) {
     button.disabled = true;
@@ -293,8 +535,7 @@ async function logout({ errorTarget, button, manageButton = true }) {
   try {
     const response = await request(API_PATHS.logout, { method: "POST" });
     if (response.status === 204) {
-      displayName.textContent = "";
-      identityUsername.textContent = "";
+      clearAuthenticatedPresentation();
       usernameInput.value = "";
       passwordInput.value = "";
       totpInput.value = "";
@@ -312,6 +553,13 @@ async function logout({ errorTarget, button, manageButton = true }) {
     if (manageButton) {
       button.disabled = false;
       button.setAttribute("aria-busy", "false");
+    }
+    if (
+      shouldResumeRecordLoad &&
+      currentState === UI_STATES.AUTHENTICATED &&
+      currentRecordState === RECORD_STATES.LOADING
+    ) {
+      void loadRecords();
     }
   }
 }
@@ -340,6 +588,12 @@ mfaCancel.addEventListener("click", async () => {
 for (const retryButton of document.querySelectorAll(".retry-action")) {
   retryButton.addEventListener("click", () => {
     void resolveIdentity();
+  });
+}
+
+for (const retryButton of recordRetryButtons) {
+  retryButton.addEventListener("click", () => {
+    void loadRecords();
   });
 }
 
