@@ -26,6 +26,15 @@ const RECORD_STATES = Object.freeze({
   UNEXPECTED_ERROR: "RECORDS_UNEXPECTED_ERROR",
 });
 
+const DETAIL_STATES = Object.freeze({
+  IDLE: "DETAIL_IDLE",
+  LOADING: "DETAIL_LOADING",
+  READY: "DETAIL_READY",
+  NOT_FOUND: "DETAIL_NOT_FOUND",
+  SERVICE_UNAVAILABLE: "DETAIL_SERVICE_UNAVAILABLE",
+  UNEXPECTED_ERROR: "DETAIL_UNEXPECTED_ERROR",
+});
+
 const RECORD_CLASSIFICATION_CLASSES = new Map([
   ["UNCLASSIFIED", "classification-unclassified"],
   ["CONFIDENTIAL", "classification-confidential"],
@@ -36,6 +45,14 @@ const RECORD_CLASSIFICATION_CLASSES = new Map([
 const RECORD_RESPONSE_FIELDS = Object.freeze([
   "classification",
   "record_code",
+  "title",
+]);
+
+const DETAIL_RESPONSE_FIELDS = Object.freeze([
+  "classification",
+  "content",
+  "record_code",
+  "summary",
   "title",
 ]);
 
@@ -71,6 +88,22 @@ const recordList = document.querySelector("#record-list");
 const recordsServiceTitle = document.querySelector("#records-service-title");
 const recordsUnexpectedTitle = document.querySelector("#records-unexpected-title");
 const recordRetryButtons = document.querySelectorAll(".record-retry-action");
+const recordCollectionView = document.querySelector("#record-collection-view");
+const recordsTitle = document.querySelector("#records-title");
+const recordDetailView = document.querySelector("#record-detail-view");
+const detailBackButton = document.querySelector("#detail-back");
+const detailStatus = document.querySelector("#detail-status");
+const detailLoadingTitle = document.querySelector("#detail-loading-title");
+const detailTitle = document.querySelector("#detail-title");
+const detailRecordCode = document.querySelector("#detail-record-code");
+const detailClassification = document.querySelector("#detail-classification");
+const detailSummarySection = document.querySelector("#detail-summary-section");
+const detailSummary = document.querySelector("#detail-summary");
+const detailContent = document.querySelector("#detail-content");
+const detailNotFoundTitle = document.querySelector("#detail-not-found-title");
+const detailServiceTitle = document.querySelector("#detail-service-title");
+const detailUnexpectedTitle = document.querySelector("#detail-unexpected-title");
+const detailRetryButtons = document.querySelectorAll(".detail-retry-action");
 
 const recordPanels = Object.freeze({
   [RECORD_STATES.IDLE]: document.querySelector("#records-state-idle"),
@@ -81,11 +114,25 @@ const recordPanels = Object.freeze({
   [RECORD_STATES.UNEXPECTED_ERROR]: document.querySelector("#records-state-unexpected-error"),
 });
 
+const detailPanels = Object.freeze({
+  [DETAIL_STATES.IDLE]: document.querySelector("#detail-state-idle"),
+  [DETAIL_STATES.LOADING]: document.querySelector("#detail-state-loading"),
+  [DETAIL_STATES.READY]: document.querySelector("#detail-state-ready"),
+  [DETAIL_STATES.NOT_FOUND]: document.querySelector("#detail-state-not-found"),
+  [DETAIL_STATES.SERVICE_UNAVAILABLE]: document.querySelector("#detail-state-service-unavailable"),
+  [DETAIL_STATES.UNEXPECTED_ERROR]: document.querySelector("#detail-state-unexpected-error"),
+});
+
 let currentState = UI_STATES.BOOTSTRAPPING;
 let mfaOperationInProgress = false;
 let currentRecordState = RECORD_STATES.IDLE;
 let recordLoadInProgress = false;
 let recordRequestVersion = 0;
+let currentDetailState = DETAIL_STATES.IDLE;
+let detailLoadInProgress = false;
+let detailRequestVersion = 0;
+let currentDetailRecordCode = null;
+let detailReturnFocus = null;
 
 function announce(message) {
   globalStatus.textContent = "";
@@ -154,6 +201,77 @@ function setRecordRetryBusy(busy) {
   }
 }
 
+function announceDetailStatus(message) {
+  detailStatus.textContent = "";
+  window.requestAnimationFrame(() => {
+    detailStatus.textContent = message;
+  });
+}
+
+function setDetailState(nextState, announcement = "") {
+  currentDetailState = nextState;
+  for (const [state, panel] of Object.entries(detailPanels)) {
+    panel.hidden = state !== nextState;
+  }
+  if (announcement) {
+    announceDetailStatus(announcement);
+  }
+  if (nextState === DETAIL_STATES.LOADING) {
+    detailLoadingTitle.focus();
+  } else if (nextState === DETAIL_STATES.READY) {
+    detailTitle.focus();
+  } else if (nextState === DETAIL_STATES.NOT_FOUND) {
+    detailNotFoundTitle.focus();
+  } else if (nextState === DETAIL_STATES.SERVICE_UNAVAILABLE) {
+    detailServiceTitle.focus();
+  } else if (nextState === DETAIL_STATES.UNEXPECTED_ERROR) {
+    detailUnexpectedTitle.focus();
+  }
+}
+
+function setDetailRetryBusy(busy) {
+  for (const button of detailRetryButtons) {
+    button.disabled = busy;
+    button.setAttribute("aria-busy", String(busy));
+  }
+}
+
+function clearDetailContent() {
+  detailRecordCode.textContent = "";
+  detailTitle.textContent = "";
+  detailClassification.textContent = "";
+  detailClassification.className = "classification-label";
+  detailSummary.textContent = "";
+  detailSummarySection.hidden = true;
+  detailContent.textContent = "";
+}
+
+function cancelDetailLoad() {
+  detailRequestVersion += 1;
+  detailLoadInProgress = false;
+  setDetailRetryBusy(false);
+}
+
+function showCollectionView() {
+  recordCollectionView.hidden = false;
+  recordDetailView.hidden = true;
+}
+
+function showDetailView() {
+  recordCollectionView.hidden = true;
+  recordDetailView.hidden = false;
+}
+
+function clearDetailWorkspace() {
+  cancelDetailLoad();
+  clearDetailContent();
+  detailStatus.textContent = "";
+  currentDetailRecordCode = null;
+  detailReturnFocus = null;
+  setDetailState(DETAIL_STATES.IDLE);
+  showCollectionView();
+}
+
 function clearRecordEntries() {
   recordList.replaceChildren();
 }
@@ -174,6 +292,7 @@ function clearAuthenticatedPresentation() {
   displayName.textContent = "";
   identityUsername.textContent = "";
   clearRecordWorkspace();
+  clearDetailWorkspace();
 }
 
 function setSubmitting(button, submitting) {
@@ -255,35 +374,91 @@ function validateRecordCollection(payload) {
   return records;
 }
 
+function validateRecordDetail(payload, requestedRecordCode) {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+  const fields = Object.keys(payload).sort();
+  if (
+    fields.length !== DETAIL_RESPONSE_FIELDS.length ||
+    !fields.every((field, index) => field === DETAIL_RESPONSE_FIELDS[index]) ||
+    typeof payload.record_code !== "string" ||
+    payload.record_code !== requestedRecordCode ||
+    typeof payload.title !== "string" ||
+    payload.title.trim().length === 0 ||
+    !(
+      payload.summary === null ||
+      (typeof payload.summary === "string" && payload.summary.trim().length > 0)
+    ) ||
+    typeof payload.content !== "string" ||
+    payload.content.trim().length === 0 ||
+    typeof payload.classification !== "string" ||
+    !RECORD_CLASSIFICATION_CLASSES.has(payload.classification)
+  ) {
+    return null;
+  }
+  return {
+    record_code: payload.record_code,
+    title: payload.title,
+    summary: payload.summary,
+    content: payload.content,
+    classification: payload.classification,
+  };
+}
+
 function renderRecordCollection(records) {
   const fragment = document.createDocumentFragment();
   for (const record of records) {
     const item = document.createElement("li");
-    const card = document.createElement("article");
-    const identity = document.createElement("div");
-    const code = document.createElement("p");
-    const title = document.createElement("h4");
+    const card = document.createElement("button");
+    const identity = document.createElement("span");
+    const code = document.createElement("span");
+    const title = document.createElement("span");
     const classification = document.createElement("span");
+    const openLabel = document.createElement("span");
 
     item.className = "record-item";
     card.className = "record-card";
+    card.type = "button";
+    identity.className = "record-identity";
     code.className = "record-code";
     title.className = "record-title";
     classification.classList.add(
       "classification-label",
       RECORD_CLASSIFICATION_CLASSES.get(record.classification),
     );
+    openLabel.className = "record-open-label";
 
     code.textContent = record.record_code;
     title.textContent = record.title;
     classification.textContent = record.classification;
+    openLabel.textContent = "Open record";
 
     identity.append(code, title);
-    card.append(identity, classification);
+    card.append(identity, classification, openLabel);
+    card.addEventListener("click", () => {
+      openRecordDetail(record.record_code, card);
+    });
     item.append(card);
     fragment.append(item);
   }
   recordList.replaceChildren(fragment);
+}
+
+function renderRecordDetail(record) {
+  detailRecordCode.textContent = record.record_code;
+  detailTitle.textContent = record.title;
+  detailClassification.classList.add(
+    RECORD_CLASSIFICATION_CLASSES.get(record.classification),
+  );
+  detailClassification.textContent = record.classification;
+  if (record.summary === null) {
+    detailSummarySection.hidden = true;
+  } else {
+    detailSummary.textContent = record.summary;
+    detailSummarySection.hidden = false;
+  }
+  detailContent.textContent = record.content;
 }
 
 function recordRequestIsCurrent(version) {
@@ -291,6 +466,119 @@ function recordRequestIsCurrent(version) {
     version === recordRequestVersion &&
     currentState === UI_STATES.AUTHENTICATED
   );
+}
+
+function detailRequestIsCurrent(version, recordCode) {
+  return (
+    version === detailRequestVersion &&
+    currentState === UI_STATES.AUTHENTICATED &&
+    currentDetailRecordCode === recordCode &&
+    !recordDetailView.hidden
+  );
+}
+
+async function loadRecordDetail() {
+  const recordCode = currentDetailRecordCode;
+  if (
+    currentState !== UI_STATES.AUTHENTICATED ||
+    typeof recordCode !== "string" ||
+    recordCode.length === 0 ||
+    detailLoadInProgress
+  ) {
+    return;
+  }
+
+  detailLoadInProgress = true;
+  const requestVersion = ++detailRequestVersion;
+  clearDetailContent();
+  setDetailRetryBusy(true);
+  setDetailState(DETAIL_STATES.LOADING, "Loading selected record detail.");
+
+  try {
+    const response = await request(
+      `${API_PATHS.records}/${encodeURIComponent(recordCode)}`,
+    );
+    if (!detailRequestIsCurrent(requestVersion, recordCode)) {
+      return;
+    }
+    if (response.status === 401) {
+      clearAuthenticatedPresentation();
+      setState(UI_STATES.LOGIN, "Your session is no longer available. Sign in again.");
+      return;
+    }
+    if (response.status === 404) {
+      setDetailState(
+        DETAIL_STATES.NOT_FOUND,
+        "Record not found or unavailable.",
+      );
+      return;
+    }
+    if (response.status === 503) {
+      setDetailState(
+        DETAIL_STATES.SERVICE_UNAVAILABLE,
+        "Classified record service unavailable.",
+      );
+      return;
+    }
+    if (response.status !== 200) {
+      setDetailState(
+        DETAIL_STATES.UNEXPECTED_ERROR,
+        "Unable to load record detail.",
+      );
+      return;
+    }
+
+    const payload = await response.json();
+    if (!detailRequestIsCurrent(requestVersion, recordCode)) {
+      return;
+    }
+    const record = validateRecordDetail(payload, recordCode);
+    if (record === null) {
+      setDetailState(
+        DETAIL_STATES.UNEXPECTED_ERROR,
+        "Unable to load record detail.",
+      );
+      return;
+    }
+    renderRecordDetail(record);
+    setDetailState(DETAIL_STATES.READY, "Selected record detail loaded.");
+  } catch {
+    if (detailRequestIsCurrent(requestVersion, recordCode)) {
+      setDetailState(
+        DETAIL_STATES.UNEXPECTED_ERROR,
+        "Unable to load record detail.",
+      );
+    }
+  } finally {
+    if (requestVersion === detailRequestVersion) {
+      detailLoadInProgress = false;
+      setDetailRetryBusy(false);
+    }
+  }
+}
+
+function openRecordDetail(recordCode, trigger) {
+  if (currentState !== UI_STATES.AUTHENTICATED) {
+    return;
+  }
+  cancelDetailLoad();
+  currentDetailRecordCode = recordCode;
+  detailReturnFocus = trigger;
+  showDetailView();
+  void loadRecordDetail();
+}
+
+function returnToRecordCollection() {
+  const focusTarget = detailReturnFocus;
+  clearDetailWorkspace();
+  announceRecordStatus("Returned to the available record collection.");
+  window.requestAnimationFrame(() => {
+    if (focusTarget?.isConnected) {
+      focusTarget.focus();
+    } else {
+      recordsTitle.focus();
+    }
+  });
 }
 
 async function loadRecords() {
@@ -523,8 +811,14 @@ async function logout({ errorTarget, button, manageButton = true }) {
   const shouldResumeRecordLoad =
     currentState === UI_STATES.AUTHENTICATED &&
     currentRecordState === RECORD_STATES.LOADING;
+  const detailCodeAtLogout = currentDetailRecordCode;
+  const shouldResumeDetailLoad =
+    currentState === UI_STATES.AUTHENTICATED &&
+    currentDetailState === DETAIL_STATES.LOADING &&
+    typeof detailCodeAtLogout === "string";
   if (currentState === UI_STATES.AUTHENTICATED) {
     cancelRecordLoad();
+    cancelDetailLoad();
   }
   setMessage(errorTarget, "");
   if (manageButton) {
@@ -561,6 +855,14 @@ async function logout({ errorTarget, button, manageButton = true }) {
     ) {
       void loadRecords();
     }
+    if (
+      shouldResumeDetailLoad &&
+      currentState === UI_STATES.AUTHENTICATED &&
+      currentDetailState === DETAIL_STATES.LOADING &&
+      currentDetailRecordCode === detailCodeAtLogout
+    ) {
+      void loadRecordDetail();
+    }
   }
 }
 
@@ -596,5 +898,13 @@ for (const retryButton of recordRetryButtons) {
     void loadRecords();
   });
 }
+
+for (const retryButton of detailRetryButtons) {
+  retryButton.addEventListener("click", () => {
+    void loadRecordDetail();
+  });
+}
+
+detailBackButton.addEventListener("click", returnToRecordCollection);
 
 void resolveIdentity();

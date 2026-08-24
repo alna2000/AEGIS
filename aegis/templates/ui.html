@@ -126,10 +126,10 @@
             </div>
           </div>
 
-          <section class="record-workspace" aria-labelledby="records-title">
+          <section id="record-collection-view" class="record-workspace" aria-labelledby="records-title">
             <header class="record-workspace-heading">
               <p class="eyebrow">Read-only workspace</p>
-              <h3 id="records-title">Available intelligence records</h3>
+              <h3 id="records-title" tabindex="-1">Available intelligence records</h3>
               <p>
                 Synthetic metadata returned for this authenticated session by the
                 classified record service.
@@ -166,6 +166,64 @@
               <h4 id="records-unexpected-title" tabindex="-1">Unable to load records</h4>
               <p>An unexpected response was received. No record metadata was displayed.</p>
               <button class="secondary-action record-retry-action" type="button">Retry record request</button>
+            </section>
+          </section>
+
+          <section id="record-detail-view" class="detail-workspace" aria-label="Intelligence record detail" hidden>
+            <button id="detail-back" class="text-action detail-back-action" type="button">
+              Return to record collection
+            </button>
+
+            <div id="detail-status" class="sr-only" role="status" aria-live="polite"></div>
+
+            <section id="detail-state-idle" class="detail-state" aria-label="Record detail preparing">
+              <p>Preparing record detail.</p>
+            </section>
+
+            <section id="detail-state-loading" class="detail-state detail-loading" aria-labelledby="detail-loading-title" hidden>
+              <div class="spinner spinner-small" aria-hidden="true"></div>
+              <div>
+                <p class="eyebrow">Record request</p>
+                <h3 id="detail-loading-title" tabindex="-1">Loading record detail</h3>
+              </div>
+            </section>
+
+            <article id="detail-state-ready" class="detail-state detail-record" aria-labelledby="detail-title" hidden>
+              <header class="detail-record-heading">
+                <div>
+                  <p id="detail-record-code" class="record-code"></p>
+                  <h3 id="detail-title" tabindex="-1"></h3>
+                </div>
+                <span id="detail-classification" class="classification-label"></span>
+              </header>
+              <section id="detail-summary-section" class="detail-section" aria-labelledby="detail-summary-title">
+                <h4 id="detail-summary-title">Summary</h4>
+                <p id="detail-summary"></p>
+              </section>
+              <section class="detail-section" aria-labelledby="detail-content-title">
+                <h4 id="detail-content-title">Record content</h4>
+                <p id="detail-content" class="detail-content"></p>
+              </section>
+            </article>
+
+            <section id="detail-state-not-found" class="detail-state detail-message" aria-labelledby="detail-not-found-title" hidden>
+              <p class="eyebrow">Record unavailable</p>
+              <h3 id="detail-not-found-title" tabindex="-1">Record not found or unavailable</h3>
+              <p>The selected record cannot be displayed.</p>
+            </section>
+
+            <section id="detail-state-service-unavailable" class="detail-state detail-message" aria-labelledby="detail-service-title" hidden>
+              <p class="eyebrow">Service unavailable</p>
+              <h3 id="detail-service-title" tabindex="-1">Record service unavailable</h3>
+              <p>The classified record service cannot respond right now.</p>
+              <button class="secondary-action detail-retry-action" type="button">Retry detail request</button>
+            </section>
+
+            <section id="detail-state-unexpected-error" class="detail-state detail-message" aria-labelledby="detail-unexpected-title" hidden>
+              <p class="eyebrow">Request interrupted</p>
+              <h3 id="detail-unexpected-title" tabindex="-1">Unable to load record detail</h3>
+              <p>An unexpected response was received. No record detail was displayed.</p>
+              <button class="secondary-action detail-retry-action" type="button">Retry detail request</button>
             </section>
           </section>
 

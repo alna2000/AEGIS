@@ -1,4 +1,4 @@
-"""Server-side contract tests for the Phase 4 Part 1 UI foundation."""
+"""Server-side contract tests for the Phase 4 authenticated UI."""
 
 import re
 
@@ -94,6 +94,38 @@ def test_authenticated_shell_contains_accessible_record_states() -> None:
     assert 'id="records-unexpected-title" tabindex="-1"' in response.text
 
 
+def test_authenticated_shell_contains_accessible_detail_states() -> None:
+    with ui_client() as client:
+        response = client.get("/ui")
+
+    assert 'id="record-detail-view" class="detail-workspace"' in response.text
+    assert 'id="detail-status" class="sr-only" role="status"' in response.text
+    for state in (
+        "detail-state-idle",
+        "detail-state-loading",
+        "detail-state-ready",
+        "detail-state-not-found",
+        "detail-state-service-unavailable",
+        "detail-state-unexpected-error",
+    ):
+        assert f'id="{state}"' in response.text
+    assert 'id="detail-back"' in response.text
+    assert "Return to record collection" in response.text
+    assert response.text.count("detail-retry-action") == 2
+    assert "Record not found or unavailable" in response.text
+    not_found = response.text.split('id="detail-state-not-found"', 1)[1].split(
+        "</section>", 1
+    )[0].lower()
+    for forbidden in (
+        "access denied",
+        "clearance",
+        "department",
+        "compartment",
+        "permission",
+    ):
+        assert forbidden not in not_found
+
+
 def test_record_workspace_introduces_no_unsupported_controls() -> None:
     with ui_client() as client:
         response = client.get("/ui")
@@ -105,7 +137,8 @@ def test_record_workspace_introduces_no_unsupported_controls() -> None:
     assert "pagination" not in lowered
     assert "total records" not in lowered
     assert "hidden records" not in lowered
-    assert "record detail" not in lowered
+    assert "next page" not in lowered
+    assert "previous page" not in lowered
 
 
 def test_static_assets_are_local_and_available() -> None:
@@ -139,13 +172,17 @@ def test_ui_script_uses_only_existing_authentication_endpoints() -> None:
     assert "document.cookie" not in script
 
 
-def test_ui_script_uses_only_the_record_collection_endpoint() -> None:
+def test_ui_script_uses_only_the_record_collection_and_detail_endpoints() -> None:
     with ui_client() as client:
         script = client.get("/static/js/aegis-ui.js").text
 
     assert set(re.findall(r'"(/records[^" ]*)"', script)) == {"/records"}
     assert 'records: "/records"' in script
-    assert '"/records/' not in script
+    assert "request(API_PATHS.records)" in script
+    assert "`${API_PATHS.records}/${encodeURIComponent(recordCode)}`" in script
+    assert 'method: "POST"' not in script.split("async function loadRecordDetail", 1)[1].split(
+        "function openRecordDetail", 1
+    )[0]
 
 
 def test_record_rendering_uses_safe_dom_construction() -> None:
@@ -163,10 +200,13 @@ def test_record_rendering_uses_safe_dom_construction() -> None:
     ):
         assert forbidden not in script
     assert 'document.createElement("li")' in script
-    assert 'document.createElement("article")' in script
+    assert 'document.createElement("button")' in script
     assert "code.textContent = record.record_code;" in script
     assert "title.textContent = record.title;" in script
     assert "classification.textContent = record.classification;" in script
+    assert "detailRecordCode.textContent = record.record_code;" in script
+    assert "detailTitle.textContent = record.title;" in script
+    assert "detailContent.textContent = record.content;" in script
 
 
 def test_collection_flow_is_guarded_and_fails_closed_structurally() -> None:
@@ -186,6 +226,40 @@ def test_collection_flow_is_guarded_and_fails_closed_structurally() -> None:
     assert "if (response.status === 503)" in script
     assert "void loadRecords();" in script
     assert "recordRequestVersion += 1;" in script
+
+
+def test_detail_payload_validation_is_strict_and_representation_consistent() -> None:
+    with ui_client() as client:
+        script = client.get("/static/js/aegis-ui.js").text
+
+    assert "const DETAIL_RESPONSE_FIELDS = Object.freeze" in script
+    for field in ("classification", "content", "record_code", "summary", "title"):
+        assert f'"{field}"' in script
+    assert "payload.record_code !== requestedRecordCode" in script
+    assert "payload.summary === null" in script
+    assert 'typeof payload.summary === "string"' in script
+    assert "RECORD_CLASSIFICATION_CLASSES.has(payload.classification)" in script
+    assert "const record = validateRecordDetail(payload, recordCode);" in script
+    assert "if (record === null)" in script
+
+
+def test_detail_flow_is_authenticated_guarded_and_invalidated_structurally() -> None:
+    with ui_client() as client:
+        script = client.get("/static/js/aegis-ui.js").text
+
+    assert "const DETAIL_STATES = Object.freeze" in script
+    assert "let detailLoadInProgress = false;" in script
+    assert "let detailRequestVersion = 0;" in script
+    assert "let currentDetailRecordCode = null;" in script
+    assert "function detailRequestIsCurrent(version, recordCode)" in script
+    assert "currentState !== UI_STATES.AUTHENTICATED" in script
+    assert "currentDetailRecordCode === recordCode" in script
+    assert "detailRequestVersion += 1;" in script
+    assert "function returnToRecordCollection()" in script
+    assert "clearAuthenticatedPresentation();" in script
+    assert "if (response.status === 404)" in script
+    assert "if (response.status === 503)" in script
+    assert "detailContent.textContent = record.content;" in script
 
 
 def test_mfa_operations_share_one_exclusion_guard() -> None:

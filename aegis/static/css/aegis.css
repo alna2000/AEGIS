@@ -290,7 +290,8 @@ button {
 
 .panel-intro,
 .state-panel > p:not(.eyebrow, .form-message),
-.record-workspace p {
+.record-workspace p,
+.detail-workspace p {
   color: var(--muted);
   line-height: 1.6;
 }
@@ -524,12 +525,28 @@ button[aria-busy="true"] .button-progress {
 
 .record-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 0.7rem 1rem;
   align-items: center;
+  width: 100%;
   padding: 1rem;
+  color: var(--text);
   background: rgb(112 217 220 / 4%);
   border: 1px solid var(--line);
+  border-radius: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.record-card:hover:not(:disabled) {
+  background: rgb(112 217 220 / 8%);
+  border-color: var(--accent);
+}
+
+.record-identity,
+.record-code,
+.record-title {
+  display: block;
 }
 
 .record-code {
@@ -586,6 +603,13 @@ button[aria-busy="true"] .button-progress {
   color: #f1a29b;
 }
 
+.record-open-label {
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
 .records-message {
   padding-left: 1rem;
   border-left: 3px solid var(--signal);
@@ -602,6 +626,93 @@ button[aria-busy="true"] .button-progress {
 }
 
 .record-retry-action {
+  width: auto;
+  min-height: 2.7rem;
+  margin-top: 1rem;
+}
+
+.detail-workspace {
+  margin-top: 2.2rem;
+}
+
+.detail-back-action {
+  margin: 0 0 1.25rem;
+  padding: 0.35rem 0;
+}
+
+.detail-state {
+  min-height: 10rem;
+}
+
+.detail-loading {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.4rem 0;
+}
+
+.detail-loading .eyebrow {
+  margin-bottom: 0.35rem;
+}
+
+.detail-loading h3,
+.detail-record h3,
+.detail-message h3 {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.detail-record {
+  border-top: 1px solid var(--line);
+}
+
+.detail-record-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: start;
+  padding: 1.4rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.detail-section {
+  padding: 1.25rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.detail-section h4 {
+  margin: 0 0 0.65rem;
+  color: var(--accent);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.detail-section p {
+  max-width: 68ch;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.detail-content {
+  color: #dce7e9 !important;
+  line-height: 1.75 !important;
+  white-space: pre-wrap;
+}
+
+.detail-message {
+  padding: 1.25rem 0 1.25rem 1rem;
+  border-top: 1px solid var(--line);
+  border-left: 3px solid var(--signal);
+}
+
+.detail-message > p:last-of-type {
+  margin-bottom: 0;
+}
+
+.detail-retry-action {
   width: auto;
   min-height: 2.7rem;
   margin-top: 1rem;
@@ -706,7 +817,16 @@ button[aria-busy="true"] .button-progress {
     grid-template-columns: 1fr;
   }
 
-  .classification-label {
+  .record-card .classification-label,
+  .record-open-label {
+    justify-self: start;
+  }
+
+  .detail-record-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-record-heading .classification-label {
     justify-self: start;
   }
 
