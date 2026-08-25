@@ -10,14 +10,15 @@ finite hash-only server-side sessions, and the encrypted service-layer TOTP
 credential foundation plus short-lived hash-only MFA challenges and final TOTP
 session issuance. **Phase 3 - Authorization & Classified Records is complete;
 Parts 1-4 are implemented, security-reviewed, verified, and checkpointed. Phase
-4 - Modern Security Interface has not started.**
+4 - Modern Security Interface is in progress; Parts 1-3 are complete and Part 4
+has not started.**
 Authentication still proves identity only and grants no authorization.
 PostgreSQL remains the application target and is not provisioned by this repository.
 
 ```text
 Phase 2: COMPLETE
 Phase 3: COMPLETE
-Phase 4: NOT STARTED
+Phase 4: IN PROGRESS (Parts 1-3 complete; Part 4 not started)
 ```
 
 Phase 3 Part 1 adds controlled role, department, clearance, and compartment
@@ -140,13 +141,42 @@ The local API will be available at `http://127.0.0.1:8000`.
 | `GET` | `/records/{record_code}` | Return one classified record only after current centralized authorization allows READ |
 
 For local manual testing, first apply migrations and create an active synthetic
-user through a trusted local database/bootstrap workflow; no public account or
-MFA enrollment endpoint exists. Keep one in-memory HTTP client/session so cookies
-are handled automatically. Use only synthetic values or placeholders:
+user through the explicit local bootstrap command; no public account or MFA
+enrollment endpoint exists. The command refuses every environment except
+`development` and `test`, requires the database to be exactly at Alembic revision
+`20260823_0006`, and commits its deterministic synthetic fixture atomically.
+It never runs during application startup or migration execution.
+
+Set the demo password only in the current process environment, run the command,
+then remove the variable when finished. The value is Argon2id-hashed through the
+normal password service and is neither printed nor stored in source:
+
+```powershell
+$env:AEGIS_DEMO_PASSWORD = Read-Host 'Synthetic demo password'
+python -m aegis.dev.bootstrap_demo
+Remove-Item Env:AEGIS_DEMO_PASSWORD
+```
+
+Successful provisioning reports each deterministic user and record as created,
+already existing, or updated. Re-running it is safe and does not duplicate rows.
+The primary password-only account is `demo.analyst`: Analyst role, Cyber
+Intelligence department, SECRET clearance, and NIGHTFALL compartment. The
+limited `demo.limited` account and records `INT-90001` through `INT-90005`
+exercise positive and negative clearance, department, and compartment cases.
+All names and content are fictional.
+
+**Local synthetic development data only. Never use this bootstrap mechanism in
+production.** Start AEGIS with `python -m uvicorn aegis.main:app --reload`, then
+open `http://127.0.0.1:8000/ui`. The primary account should see `INT-90001` and
+`INT-90002`; the three higher-classification, department-mismatched, or
+compartment-mismatched records remain hidden by backend authorization.
+
+Keep one in-memory HTTP client/session so cookies are handled automatically. Use
+only synthetic values or placeholders:
 
 ```powershell
 $aegisWeb = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-$loginBody = @{username='<SYNTHETIC_USERNAME>'; password='<SYNTHETIC_PASSWORD>'} | ConvertTo-Json
+$loginBody = @{username='demo.analyst'; password='<SYNTHETIC_PASSWORD>'} | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/auth/login' -ContentType 'application/json' -Body $loginBody -WebSession $aegisWeb
 ```
 
