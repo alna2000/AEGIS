@@ -57,7 +57,16 @@
       <section class="access-panel" aria-label="AEGIS authentication">
         <div id="global-status" class="sr-only" role="status" aria-live="polite"></div>
 
-        <section id="state-bootstrapping" class="state-panel loading-panel" aria-labelledby="bootstrapping-title">
+        <section id="script-required" class="state-panel error-panel" aria-labelledby="script-required-title">
+          <p class="eyebrow">Browser support required</p>
+          <h2 id="script-required-title">JavaScript is required</h2>
+          <p>
+            This read-only interface needs local JavaScript to communicate with
+            the same-origin AEGIS API. No authenticated content has been loaded.
+          </p>
+        </section>
+
+        <section id="state-bootstrapping" class="state-panel loading-panel" aria-labelledby="bootstrapping-title" hidden>
           <div class="spinner" aria-hidden="true"></div>
           <p class="eyebrow">Secure channel</p>
           <h2 id="bootstrapping-title">Verifying session</h2>
@@ -78,7 +87,7 @@
               <label for="password">Password</label>
               <input id="password" name="password" type="password" autocomplete="current-password" required>
             </div>
-            <p id="login-error" class="form-message" role="alert" hidden></p>
+            <p id="login-error" class="form-message" role="alert" tabindex="-1" hidden></p>
             <button id="login-submit" class="primary-action" type="submit">
               <span>Verify identity</span>
               <span class="button-progress" aria-hidden="true">Processing</span>
@@ -107,7 +116,7 @@
                 required
               >
             </div>
-            <p id="mfa-error" class="form-message" role="alert" hidden></p>
+            <p id="mfa-error" class="form-message" role="alert" tabindex="-1" hidden></p>
             <button id="mfa-submit" class="primary-action" type="submit">
               <span>Complete verification</span>
               <span class="button-progress" aria-hidden="true">Processing</span>
@@ -227,7 +236,7 @@
             </section>
           </section>
 
-          <p id="logout-error" class="form-message" role="alert" hidden></p>
+          <p id="logout-error" class="form-message" role="alert" tabindex="-1" hidden></p>
           <button id="logout-button" class="secondary-action" type="button">Sign out securely</button>
         </section>
 

@@ -1198,16 +1198,55 @@ metadata load only after their applicable explicit authorization decisions.
 ```text
 Phase 2: COMPLETE
 Phase 3: COMPLETE
-Phase 4: NOT STARTED
+Phase 4: COMPLETE
+Phase 5: NOT STARTED
 ```
 
 The implemented HTTP boundary is read-only: `GET /records` and
 `GET /records/{record_code}`. It does not implement record or policy mutation,
 assignment administration, rich search, pagination, persistent authorization
-audit evidence, RLS, or a frontend. The collection cap of 100 candidates with a
+audit evidence or RLS. The collection cap of 100 candidates with a
 101st-row fail-closed `503` is a bounded synthetic-demonstration limitation, not
 pagination or a production-scale claim. FastAPI currently ignores undeclared
 collection query parameters; they have no filtering or authorization effect.
+
+## Phase 4 implementation and closure status
+
+Phase 4 implements a same-origin presentation layer at `GET /ui` using FastAPI,
+Jinja2, local CSS, and limited plain JavaScript. It has no separate frontend
+origin, build toolchain, external asset dependency, inline active content, or
+browser token store. The interface calls only the existing password login, MFA
+completion, current identity, logout, authorized record collection, and protected
+record-detail routes.
+
+The browser never receives roles, department, clearance, or compartments and
+contains no policy evaluator. It renders only the backend response, validates
+the response shape, maps controlled classification labels for presentation, URL
+encodes candidate record codes, and uses `textContent` for every dynamic value.
+Collection and detail requests use overlap and stale-response guards;
+authentication loss and successful logout invalidate identity and record state.
+Identity resolution has an equivalent version guard so a stale response cannot
+restore a superseded presentation state.
+
+The UI route returns `no-store`, `nosniff`, `no-referrer`, a restrictive
+Permissions Policy, and a CSP limited to same-origin connections, fonts, images,
+scripts, styles, and forms with `default-src 'none'`, `base-uri 'none'`,
+`frame-ancestors 'none'`, and `object-src 'none'`. Accessibility includes
+semantic headings, labels, native controls, skip navigation, live/alert regions,
+programmatic focus transitions, visible focus, reduced-motion handling, text as
+well as color for classification, responsive layout, and a JavaScript-failure
+fallback that exposes no authenticated data.
+
+The deterministic local demo bootstrap is explicit development/test tooling,
+requires `AEGIS_DEMO_PASSWORD`, hashes with the existing password service,
+verifies Alembic revision `20260823_0006`, and executes atomically/idempotently.
+It is neither an endpoint nor a startup seeder. Local PostgreSQL uses separate
+owner/migration/bootstrap and least-privileged runtime identities; the runtime
+does not own the schema or receive DDL privileges.
+
+Phase 4 is complete. Phase 5 bot detection and abuse protection is not started.
+It must preserve all authentication/authorization boundaries and begin with a
+privacy- and accessibility-aware abuse threat model and architecture review.
 
 The policy-first/content-second design revalidates identity, classification, and
 lifecycle consistency after authorization, but it does not claim to solve all

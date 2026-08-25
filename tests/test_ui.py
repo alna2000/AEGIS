@@ -51,6 +51,21 @@ def test_dynamic_state_focus_targets_are_programmatically_focusable() -> None:
     assert "authenticatedTitle.focus();" in script
     assert "serviceTitle.focus();" in script
     assert "unexpectedTitle.focus();" in script
+    for target in ("login-error", "mfa-error", "logout-error"):
+        assert f'id="{target}" class="form-message" role="alert" tabindex="-1"' in response.text
+
+
+def test_ui_has_a_safe_javascript_failure_fallback() -> None:
+    with ui_client() as client:
+        response = client.get("/ui")
+        script = client.get("/static/js/aegis-ui.js").text
+
+    assert 'id="script-required" class="state-panel error-panel"' in response.text
+    assert "JavaScript is required" in response.text
+    assert "No authenticated content has been loaded." in response.text
+    assert 'id="state-bootstrapping"' in response.text
+    assert 'aria-labelledby="bootstrapping-title" hidden' in response.text
+    assert "scriptRequired.hidden = true;" in script
 
 
 def test_ui_contains_no_authorization_or_credential_material() -> None:
@@ -262,6 +277,22 @@ def test_detail_flow_is_authenticated_guarded_and_invalidated_structurally() -> 
     assert "detailContent.textContent = record.content;" in script
 
 
+def test_identity_resolution_rejects_overlap_and_stale_responses() -> None:
+    with ui_client() as client:
+        script = client.get("/static/js/aegis-ui.js").text
+
+    assert "let identityLoadInProgress = false;" in script
+    assert "let identityRequestVersion = 0;" in script
+    assert "function cancelIdentityLoad()" in script
+    assert "function identityRequestIsCurrent(version)" in script
+    assert "if (identityLoadInProgress)" in script
+    assert "const requestVersion = ++identityRequestVersion;" in script
+    assert script.count("if (!identityRequestIsCurrent(requestVersion))") == 2
+    assert "cancelIdentityLoad();" in script.split(
+        "async function logout", 1
+    )[1].split("logoutButton.addEventListener", 1)[0]
+
+
 def test_mfa_operations_share_one_exclusion_guard() -> None:
     with ui_client() as client:
         script = client.get("/static/js/aegis-ui.js").text
@@ -282,17 +313,37 @@ def test_ui_has_route_scoped_browser_security_headers() -> None:
         docs_response = client.get("/docs")
 
     policy = ui_response.headers["content-security-policy"]
-    assert "default-src 'none'" in policy
-    assert "script-src 'self'" in policy
-    assert "style-src 'self'" in policy
-    assert "connect-src 'self'" in policy
-    assert "frame-ancestors 'none'" in policy
+    assert set(policy.split("; ")) == {
+        "default-src 'none'",
+        "base-uri 'none'",
+        "connect-src 'self'",
+        "font-src 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+        "img-src 'self'",
+        "object-src 'none'",
+        "script-src 'self'",
+        "style-src 'self'",
+    }
     assert ui_response.headers["x-content-type-options"] == "nosniff"
     assert ui_response.headers["referrer-policy"] == "no-referrer"
     assert "camera=()" in ui_response.headers["permissions-policy"]
     assert ui_response.headers["cache-control"] == "no-store"
     assert docs_response.status_code == 200
     assert "content-security-policy" not in docs_response.headers
+
+
+def test_ui_has_no_inline_active_content_and_wraps_record_codes() -> None:
+    with ui_client() as client:
+        response = client.get("/ui")
+        stylesheet = client.get("/static/css/aegis.css").text
+
+    assert re.search(r"<script[^>]+src=", response.text)
+    assert not re.search(r"<script(?![^>]+src=)", response.text)
+    assert "<style" not in response.text
+    assert not re.search(r"\son[a-z]+\s*=", response.text, re.IGNORECASE)
+    record_code_rule = stylesheet.split(".record-code {", 1)[1].split("}", 1)[0]
+    assert "overflow-wrap: anywhere;" in record_code_rule
 
 
 def test_existing_system_json_contracts_are_unchanged() -> None:

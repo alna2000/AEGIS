@@ -2,16 +2,17 @@
 
 ```text
 Project: AEGIS - Classified Intelligence Access System
-Completed Phase: Phase 3 - Authorization & Classified Records
+Completed Phase: Phase 4 - Modern Security Interface
 Status: COMPLETE
-Current Phase: Phase 4 - Modern Security Interface
+Current Phase: Phase 5 - Bot Detection & Abuse Protection
 Phase 2: COMPLETE
 Phase 3: COMPLETE
 Phase 3 Part 1: COMPLETE / CHECKPOINTED
 Phase 3 Part 2: COMPLETE / CHECKPOINTED
 Phase 3 Part 3: COMPLETE / CHECKPOINTED
 Phase 3 Part 4: COMPLETE / CHECKPOINTED
-Phase 4: NOT STARTED
+Phase 4: COMPLETE / CHECKPOINTED
+Phase 5: NOT STARTED
 ```
 
 ## What AEGIS is
@@ -149,8 +150,10 @@ remaining PostgreSQL entities and relationships, session storage, MFA storage,
 audit events, deletion behavior, database privilege separation, and optional RLS
 defense in depth.
 
-PostgreSQL infrastructure, broader authorization workflows, frontend, bot
-protection, persistent audit storage, and deployment remain unimplemented.
+Production PostgreSQL infrastructure, broader authorization workflows, bot
+protection, persistent audit storage, and deployment remain unimplemented. A
+least-privileged local PostgreSQL development setup and the Phase 4 read-only
+frontend are implemented.
 Authentication state remains identity-only even though current authorization
 facts and classified records now exist in their owning Phase 3 boundaries.
 
@@ -293,23 +296,22 @@ completion summary, a mandatory opening prompt for the next phase, appropriate
 verification, and a meaningful Git/GitHub checkpoint. A full project ZIP is
 optional and is not a routine handover requirement.
 
-For Phase 4, the minimum new-chat package is:
+For Phase 5, the minimum new-chat package is:
 
 ```text
-AEGIS_Phase4_Opening_Prompt.md
+AEGIS_Phase5_Opening_Prompt.md
 AEGIS_Current_Status_and_Handover.md
 AEGIS_Project_Plan.md
-Phase_3_Completion_Summary.md
+Phase_4_Completion_Summary.md
 AEGIS_Architecture_and_Security_Design.md
 AEGIS_Decision_Log.md
 README.md
 ```
 
-The architecture and decision documents are included because authorization and
-classified-record handling remain security-sensitive. Normal continuity follows
-the source-of-truth hierarchy in the project plan, not a ZIP archive. The Phase 4
-chat must review these documents and the actual backend before asking Codex to
-implement anything.
+The architecture and decision documents remain security-sensitive. Normal
+continuity follows the source-of-truth hierarchy in the project plan, not a ZIP
+archive. The Phase 5 chat must review these documents, authentication/session
+flows, and the abuse threat surface before asking Codex to implement anything.
 
 ## Completed Phase 2 boundary
 
@@ -468,15 +470,34 @@ regressions. The final Phase 3 closure checkpoint is the repository HEAD carryin
 `Complete AEGIS Phase 3 and prepare Phase 4 handover`; Git history is authoritative
 for its hash.
 
-Phase 4 is **NOT STARTED**. Its first work must be design review for a read-only
-interface that renders only backend-authorized results. It must not infer support
-for record mutation, activation/retirement, policy or assignment administration,
-rich search, pagination, totals, persistent authorization audit viewing, bot
-protection, monitoring/SIEM, deployment, or AI/RAG. Persistent audit remains
-primarily Phase 6, bot/abuse protection Phase 5, and deployment Phase 7.
+Phase 4 is **COMPLETE**. The same-origin interface at `GET /ui` handles password
+login, the existing MFA challenge, current identity, logout, backend-authorized
+record collection, and generic hidden detail while performing no authorization.
+Local CSS and plain JavaScript provide responsive, accessible, stale-operation-
+guarded presentation under a strict route-scoped CSP. The explicit local demo
+bootstrap is development/test-only, transactional, idempotent, and guarded by
+Alembic revision `20260823_0006`.
+
+Phase 5 is **NOT STARTED**. It must begin with repository inspection,
+authentication/session-flow review, abuse threat modeling, and rate-limit/
+challenge design. Persistent audit remains primarily Phase 6 and deployment
+Phase 7.
 
 Known limitations remain: the read-only policy/representation boundary does not
 solve future concurrent-mutation TOCTOU; proper isolation/versioning must precede
 such workflows. PostgreSQL SQL is rendered offline but no live production
 PostgreSQL execution or production-scale collection performance is claimed. All
 identities and intelligence are fictional and synthetic.
+
+## Phase 4 completion boundary
+
+Phase 4 is documented in `Phase_4_Completion_Summary.md`. Its implementation
+checkpoints cover authentication presentation, authorized collection, protected
+detail, and final hardening/closure; the local synthetic demo bootstrap has its
+own reviewed checkpoint. Final coverage includes exact CSP/header tests, safe
+text-only DOM rendering, no client authorization vocabulary, accessible focus
+and live states, a JavaScript-failure fallback, guarded stale identity/record
+operations, responsive wrapping, and preservation of backend regressions.
+
+`AEGIS_Phase5_Opening_Prompt.md` is the mandatory design-first handoff. Phase 5
+implementation has not started.

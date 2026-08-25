@@ -15,9 +15,10 @@ learning path or stronger security approach is discovered.
    **Complete.**
 4. **Phase 4 — Modern Security Interface**
    Build a clear, professional user interface over proven backend controls.
-   **Not started.**
+   **Complete.**
 5. **Phase 5 — Bot Detection & Abuse Protection**
    Add layered defenses for automated and abusive requests.
+   **Not started.**
 6. **Phase 6 — Audit, Monitoring & Security Testing**
    Improve observability and systematically test the security controls.
 7. **Phase 7 — Home Server Deployment & Public Access**
@@ -30,7 +31,8 @@ learning path or stronger security approach is discovered.
 ```text
 Phase 2: COMPLETE
 Phase 3: COMPLETE
-Phase 4: NOT STARTED
+Phase 4: COMPLETE
+Phase 5: NOT STARTED
 ```
 
 Phase 1 is complete: Part 1 established the verified minimal FastAPI foundation,
@@ -68,12 +70,17 @@ The output is sorted record code/title/classification only, with no totals or
 pagination; zero accessible records returns `[]`, while candidate overflow above
 100, evaluator failure, corrupted policy, or inconsistent batch state fails the
 whole operation with generic 503. Record CRUD, rich search, production mutation
-and activation workflows, assignment workflows, frontend behavior, and
+and activation workflows, assignment workflows, frontend authorization, and
 persistent authorization audit storage remain deferred. Role capability is only
 eligibility for further evaluation and does not waive future action-specific
-workflow/context checks. Phase 4 - Modern Security Interface has not started and
-must begin with repository review and design for a read-only interface over the
-existing backend-authorized endpoints.
+workflow/context checks. Phase 4 - Modern Security Interface is complete: its
+same-origin FastAPI/Jinja2/local-CSS/plain-JavaScript interface presents existing
+authentication, MFA, session, authorized collection, and protected detail
+contracts without moving policy into the browser. Final hardening adds strict
+route-scoped browser headers/CSP, accessible and responsive states, safe
+text-only rendering, stale-operation guards, and an explicit local synthetic
+demo workflow. Phase 5 has not started and must begin with abuse-surface and
+rate-limit/challenge design before implementation.
 
 ## Phase Completion and Handover Protocol
 

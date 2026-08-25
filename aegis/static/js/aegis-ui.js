@@ -66,6 +66,7 @@ const panels = Object.freeze({
 });
 
 const globalStatus = document.querySelector("#global-status");
+const scriptRequired = document.querySelector("#script-required");
 const loginForm = document.querySelector("#login-form");
 const usernameInput = document.querySelector("#username");
 const passwordInput = document.querySelector("#password");
@@ -124,6 +125,8 @@ const detailPanels = Object.freeze({
 });
 
 let currentState = UI_STATES.BOOTSTRAPPING;
+let identityLoadInProgress = false;
+let identityRequestVersion = 0;
 let mfaOperationInProgress = false;
 let currentRecordState = RECORD_STATES.IDLE;
 let recordLoadInProgress = false;
@@ -293,6 +296,18 @@ function clearAuthenticatedPresentation() {
   identityUsername.textContent = "";
   clearRecordWorkspace();
   clearDetailWorkspace();
+}
+
+function cancelIdentityLoad() {
+  identityRequestVersion += 1;
+  identityLoadInProgress = false;
+}
+
+function identityRequestIsCurrent(version) {
+  return (
+    version === identityRequestVersion &&
+    currentState === UI_STATES.BOOTSTRAPPING
+  );
 }
 
 function setSubmitting(button, submitting) {
@@ -666,11 +681,20 @@ function showUnexpectedError() {
 }
 
 async function resolveIdentity() {
+  if (identityLoadInProgress) {
+    return;
+  }
+
+  identityLoadInProgress = true;
+  const requestVersion = ++identityRequestVersion;
   clearAuthenticatedPresentation();
   setState(UI_STATES.BOOTSTRAPPING, "Verifying authenticated identity.");
 
   try {
     const response = await request(API_PATHS.identity);
+    if (!identityRequestIsCurrent(requestVersion)) {
+      return;
+    }
     if (response.status === 401) {
       setState(UI_STATES.LOGIN, "Sign in is required.");
       return;
@@ -685,6 +709,9 @@ async function resolveIdentity() {
     }
 
     const identity = await response.json();
+    if (!identityRequestIsCurrent(requestVersion)) {
+      return;
+    }
     if (
       typeof identity.display_name !== "string" ||
       !identity.display_name ||
@@ -700,7 +727,13 @@ async function resolveIdentity() {
     setState(UI_STATES.AUTHENTICATED, "Authenticated identity confirmed.");
     void loadRecords();
   } catch {
-    showUnexpectedError();
+    if (identityRequestIsCurrent(requestVersion)) {
+      showUnexpectedError();
+    }
+  } finally {
+    if (requestVersion === identityRequestVersion) {
+      identityLoadInProgress = false;
+    }
   }
 }
 
@@ -816,6 +849,7 @@ async function logout({ errorTarget, button, manageButton = true }) {
     currentState === UI_STATES.AUTHENTICATED &&
     currentDetailState === DETAIL_STATES.LOADING &&
     typeof detailCodeAtLogout === "string";
+  cancelIdentityLoad();
   if (currentState === UI_STATES.AUTHENTICATED) {
     cancelRecordLoad();
     cancelDetailLoad();
@@ -907,4 +941,5 @@ for (const retryButton of detailRetryButtons) {
 
 detailBackButton.addEventListener("click", returnToRecordCollection);
 
+scriptRequired.hidden = true;
 void resolveIdentity();

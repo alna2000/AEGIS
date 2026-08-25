@@ -10,15 +10,16 @@ finite hash-only server-side sessions, and the encrypted service-layer TOTP
 credential foundation plus short-lived hash-only MFA challenges and final TOTP
 session issuance. **Phase 3 - Authorization & Classified Records is complete;
 Parts 1-4 are implemented, security-reviewed, verified, and checkpointed. Phase
-4 - Modern Security Interface is in progress; Parts 1-3 are complete and Part 4
-has not started.**
+4 - Modern Security Interface is complete, security-reviewed, verified, and
+checkpointed. Phase 5 - Bot Detection & Abuse Protection has not started.**
 Authentication still proves identity only and grants no authorization.
 PostgreSQL remains the application target and is not provisioned by this repository.
 
 ```text
 Phase 2: COMPLETE
 Phase 3: COMPLETE
-Phase 4: IN PROGRESS (Parts 1-3 complete; Part 4 not started)
+Phase 4: COMPLETE
+Phase 5: NOT STARTED
 ```
 
 Phase 3 Part 1 adds controlled role, department, clearance, and compartment
@@ -133,6 +134,7 @@ The local API will be available at `http://127.0.0.1:8000`.
 | --- | --- | --- |
 | `GET` | `/` | AEGIS development status |
 | `GET` | `/health` | Minimal process health check |
+| `GET` | `/ui` | Same-origin read-only authentication and authorized-record interface |
 | `POST` | `/auth/login` | Verify a synthetic password; issue a session or require TOTP |
 | `POST` | `/auth/mfa/totp/verify` | Complete a valid password-issued MFA challenge with TOTP |
 | `GET` | `/auth/me` | Return safe identity for a usable current session |
@@ -204,8 +206,16 @@ and introduce no authenticated state change. The frontend must never perform
 authorization. Record mutation and assignment workflows, rich search, abuse
 protection, persistent audit storage, and deployment remain unimplemented.
 
-Phase 4 may build a read-only interface over the existing authentication and
-record GET routes, but it must render only backend-authorized responses. Record
-creation or mutation, assignment administration, rich search, pagination,
-persistent authorization audit, bot protection, monitoring, and deployment are
-not available backend capabilities.
+Phase 4's read-only interface over the existing authentication and record GET
+routes is complete. It renders only backend-authorized responses, uses safe
+text-only DOM construction, stores no tokens, and performs no authorization.
+`GET /ui` has a strict route-scoped CSP, no-store/nosniff/no-referrer/restrictive-
+permissions headers, accessible state and focus handling, responsive local CSS,
+stale-operation guards, and a safe JavaScript-failure fallback. Record creation
+or mutation, assignment administration, rich search, pagination, persistent
+authorization audit, bot protection, monitoring, and deployment are not
+available backend capabilities.
+
+See `Phase_4_Completion_Summary.md` for the completed UI/security boundary.
+Phase 5 must begin by reading `AEGIS_Phase5_Opening_Prompt.md` and reviewing the
+authentication/session abuse surface before any bot-protection implementation.
