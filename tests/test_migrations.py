@@ -7,6 +7,38 @@ import uuid
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import MetaData, Table, create_engine, inspect, select
+from sqlalchemy.engine import make_url
+
+
+def test_environment_database_url_supports_percent_without_credential_output(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    synthetic_password = "synthetic%credential"
+    encoded_synthetic_password = "synthetic%25credential"
+    database_url = (
+        f"postgresql+psycopg://synthetic_user:{encoded_synthetic_password}"
+        "@db.invalid/synthetic_db"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("AEGIS_DATABASE_URL", database_url)
+
+    config = Config(str(project_root / "alembic.ini"))
+    config.set_main_option("script_location", str(project_root / "migrations"))
+    command.upgrade(config, "head", sql=True)
+
+    configured_url = config.get_main_option("sqlalchemy.url")
+    captured = capsys.readouterr()
+    assert configured_url == database_url
+    assert make_url(configured_url).password == synthetic_password
+    assert database_url not in captured.out
+    assert database_url not in captured.err
+    assert synthetic_password not in captured.out
+    assert synthetic_password not in captured.err
+    assert encoded_synthetic_password not in captured.out
+    assert encoded_synthetic_password not in captured.err
 
 
 def test_authentication_migrations_upgrade_and_downgrade(tmp_path: Path) -> None:
