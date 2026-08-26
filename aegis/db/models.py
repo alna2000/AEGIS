@@ -737,6 +737,10 @@ class MfaChallenge(Base):
             "consumed_at IS NULL OR revoked_at IS NULL",
             name="ck_mfa_challenges_single_terminal_state",
         ),
+        CheckConstraint(
+            "failed_factor_attempts BETWEEN 0 AND 5",
+            name="ck_mfa_challenges_failed_factor_attempts_bounded",
+        ),
         Index(
             "ix_mfa_challenges_user_lifecycle",
             "user_id",
@@ -760,6 +764,9 @@ class MfaChallenge(Base):
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    failed_factor_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     source_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(256), nullable=True)
 

@@ -81,6 +81,23 @@ def test_refuses_wrong_or_missing_schema_before_writes(db_session: Session) -> N
     assert db_session.scalar(select(func.count()).select_from(User)) == 0
 
 
+def test_refuses_prior_phase_head_without_weakening_exact_revision_guard(
+    db_session: Session,
+) -> None:
+    engine = db_session.get_bind()
+    assert isinstance(engine, Engine)
+    with engine.begin() as connection:
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        )
+        connection.execute(
+            text("INSERT INTO alembic_version (version_num) VALUES ('20260823_0006')")
+        )
+    with pytest.raises(DemoBootstrapError, match=REQUIRED_REVISION):
+        bootstrap_demo(settings(), PASSWORD, engine=engine)
+    assert db_session.scalar(select(func.count()).select_from(User)) == 0
+
+
 def test_creates_hashed_users_assignments_and_policy_matrix(demo_engine: Engine) -> None:
     report = bootstrap_demo(settings(), PASSWORD, engine=demo_engine)
     assert len(report.created) == len(USERS) + len(RECORDS)

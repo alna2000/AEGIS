@@ -170,6 +170,7 @@ def test_authentication_migrations_upgrade_and_downgrade(tmp_path: Path) -> None
         "expires_at",
         "consumed_at",
         "revoked_at",
+        "failed_factor_attempts",
         "source_ip",
         "user_agent",
     }
@@ -188,6 +189,7 @@ def test_authentication_migrations_upgrade_and_downgrade(tmp_path: Path) -> None
         "ck_mfa_challenges_consumed_after_creation",
         "ck_mfa_challenges_revoked_after_creation",
         "ck_mfa_challenges_single_terminal_state",
+        "ck_mfa_challenges_failed_factor_attempts_bounded",
     } <= challenge_checks
     challenge_foreign_keys = inspector.get_foreign_keys("mfa_challenges")
     assert len(challenge_foreign_keys) == 1
@@ -516,4 +518,48 @@ def test_intelligence_record_migration_upgrades_part_1_and_downgrades(
     assert "record_departments" not in downgraded_tables
     assert "record_compartments" not in downgraded_tables
     assert "roles" in downgraded_tables
+    engine.dispose()
+
+
+def test_mfa_failure_bound_migration_round_trips_only_its_column(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "mfa-failure-bound-round-trip.sqlite3"
+    database_url = f"sqlite+pysqlite:///{database_path.as_posix()}"
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(config, "20260823_0006")
+
+    engine = create_engine(database_url)
+    before_tables = set(inspect(engine).get_table_names())
+    before_columns = {
+        column["name"] for column in inspect(engine).get_columns("mfa_challenges")
+    }
+    assert "failed_factor_attempts" not in before_columns
+    engine.dispose()
+
+    command.upgrade(config, "20260826_0007")
+    engine = create_engine(database_url)
+    inspector = inspect(engine)
+    columns = {column["name"]: column for column in inspector.get_columns("mfa_challenges")}
+    added = columns["failed_factor_attempts"]
+    assert added["nullable"] is False
+    assert str(added["default"]).strip("'\"()") == "0"
+    checks = {
+        constraint["name"]: constraint["sqltext"]
+        for constraint in inspector.get_check_constraints("mfa_challenges")
+    }
+    assert checks["ck_mfa_challenges_failed_factor_attempts_bounded"] == (
+        "failed_factor_attempts BETWEEN 0 AND 5"
+    )
+    assert set(inspector.get_table_names()) == before_tables
+    engine.dispose()
+
+    command.downgrade(config, "20260823_0006")
+    engine = create_engine(database_url)
+    inspector = inspect(engine)
+    assert {
+        column["name"] for column in inspector.get_columns("mfa_challenges")
+    } == before_columns
+    assert set(inspector.get_table_names()) == before_tables
     engine.dispose()

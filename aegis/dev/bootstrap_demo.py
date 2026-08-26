@@ -20,7 +20,7 @@ from aegis.db.models import (
 from aegis.db.session import create_database_engine, create_session_factory
 from aegis.security.passwords import PasswordService
 
-REQUIRED_REVISION = "20260823_0006"
+REQUIRED_REVISION = "20260826_0007"
 DEMO_PASSWORD_ENV = "AEGIS_DEMO_PASSWORD"
 CREATED_AT = datetime(2026, 8, 24, 12, tzinfo=timezone.utc)
 

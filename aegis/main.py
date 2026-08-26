@@ -15,6 +15,7 @@ from aegis.api.routes.intelligence_records import (
 from aegis.api.routes.system import router as system_router
 from aegis.api.routes.ui import router as ui_router
 from aegis.core.config import get_settings
+from aegis.security.authentication_abuse import AuthenticationAbuseControl
 
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent
@@ -25,6 +26,7 @@ def create_app() -> FastAPI:
 
     settings = get_settings()
     application = FastAPI(title=settings.app_name, debug=settings.debug)
+    application.state.authentication_abuse_control = AuthenticationAbuseControl.create_local()
     application.include_router(system_router)
     application.include_router(authentication_router)
     application.include_router(intelligence_records_router)

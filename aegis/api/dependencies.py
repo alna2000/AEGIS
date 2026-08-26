@@ -23,6 +23,7 @@ from aegis.db.intelligence_record_repositories import (
 from aegis.db.session import create_database_engine, create_session_factory
 from aegis.security.audit_sinks import LoggingAuthenticationAuditSink
 from aegis.security.authentication_events import AuthenticationAuditSink
+from aegis.security.authentication_abuse import AuthenticationAbuseControl
 from aegis.security.passwords import PasswordService
 from aegis.security.mfa_encryption import MfaKeyConfigurationError, MfaSecretCipher
 from aegis.security.totp import TotpService
@@ -63,6 +64,12 @@ def get_authentication_audit_sink() -> AuthenticationAuditSink:
     """Return the current non-persistent controlled authentication audit sink."""
 
     return LoggingAuthenticationAuditSink()
+
+
+def get_authentication_abuse_control(request: Request) -> AuthenticationAbuseControl:
+    """Return the single abuse-control runtime owned by this application."""
+
+    return request.app.state.authentication_abuse_control
 
 
 def get_authentication_service(

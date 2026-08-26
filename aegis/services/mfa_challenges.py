@@ -154,6 +154,26 @@ class MfaChallengeService:
         )
         self._challenges.flush()
 
+    def record_factor_failure(
+        self, resolved: ResolvedMfaChallenge, *, maximum_failures: int
+    ) -> int:
+        """Persist one factor failure and revoke this challenge at its bound."""
+
+        if type(maximum_failures) is not int or maximum_failures != 5:
+            raise ValueError("the MFA challenge failure bound must be five")
+        challenge = resolved._challenge
+        if not self._is_usable(challenge):
+            raise MfaChallengeServiceError("MFA challenge is no longer usable")
+        if challenge.failed_factor_attempts >= maximum_failures:
+            raise MfaChallengeServiceError("MFA challenge failure bound exceeded")
+        challenge.failed_factor_attempts += 1
+        if challenge.failed_factor_attempts == maximum_failures:
+            challenge.revoked_at = max(
+                self._current_time(), self._as_utc(challenge.created_at)
+            )
+        self._challenges.flush()
+        return challenge.failed_factor_attempts
+
     def revoke(self, raw_token: str | None) -> bool:
         """Revoke a known unconsumed challenge; invalid input is harmless."""
 

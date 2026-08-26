@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 
 from aegis.db.models import MfaCredential
 from aegis.db.repositories import MfaCredentialRepository
@@ -25,6 +26,14 @@ from aegis.services.authentication import AuthenticatedPrincipal
 
 class MfaEnrollmentConflict(RuntimeError):
     """Raised when a user already has a pending or enabled TOTP credential."""
+
+
+class MfaVerificationStatus(str, Enum):
+    """Internal factor outcome used to classify challenge failure accounting."""
+
+    SUCCESS = "SUCCESS"
+    FACTOR_FAILURE = "FACTOR_FAILURE"
+    CREDENTIAL_UNUSABLE = "CREDENTIAL_UNUSABLE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +117,19 @@ class MfaService:
     ) -> bool:
         """Verify an enabled credential and consume its matching TOTP counter."""
 
+        return (
+            self.verify_result(principal, code, context)
+            is MfaVerificationStatus.SUCCESS
+        )
+
+    def verify_result(
+        self,
+        principal: AuthenticatedPrincipal,
+        code: object,
+        context: AuthenticationRequestContext,
+    ) -> MfaVerificationStatus:
+        """Verify TOTP while distinguishing factor failures from unusable state."""
+
         credential = self._credentials.get_current_totp(
             principal.user_id, for_update=True
         )
@@ -115,8 +137,50 @@ class MfaService:
             self._record_failure(
                 principal, context, AuthenticationReasonCode.MFA_CREDENTIAL_UNUSABLE
             )
-            return False
-        return self._accept_code(credential, principal, code, context, enable=False)
+            return MfaVerificationStatus.CREDENTIAL_UNUSABLE
+        return self._verify_code_result(credential, principal, code, context)
+
+    def _verify_code_result(
+        self,
+        credential: MfaCredential,
+        principal: AuthenticatedPrincipal,
+        code: object,
+        context: AuthenticationRequestContext,
+    ) -> MfaVerificationStatus:
+        try:
+            secret = self._cipher.decrypt(
+                credential.encrypted_secret, credential.encryption_key_id
+            )
+        except MfaSecretDecryptionError:
+            self._record_failure(
+                principal, context, AuthenticationReasonCode.MFA_CREDENTIAL_UNUSABLE
+            )
+            return MfaVerificationStatus.CREDENTIAL_UNUSABLE
+
+        now = self._current_time()
+        try:
+            counter = self._totp.matching_counter(secret, code, now)
+        except (TypeError, ValueError, OverflowError):
+            counter = None
+        if counter is None:
+            self._record_failure(
+                principal, context, AuthenticationReasonCode.TOTP_REJECTED
+            )
+            return MfaVerificationStatus.FACTOR_FAILURE
+        if (
+            credential.last_accepted_counter is not None
+            and counter <= credential.last_accepted_counter
+        ):
+            self._record_failure(
+                principal, context, AuthenticationReasonCode.TOTP_REPLAYED
+            )
+            return MfaVerificationStatus.FACTOR_FAILURE
+
+        self._record_success(principal, context)
+        credential.last_accepted_counter = counter
+        credential.last_used_at = max(now, self._as_utc(credential.created_at))
+        self._credentials.flush()
+        return MfaVerificationStatus.SUCCESS
 
     def disable(self, principal: AuthenticatedPrincipal) -> bool:
         """Disable, but do not delete, the current TOTP credential."""
