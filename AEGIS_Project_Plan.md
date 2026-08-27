@@ -18,7 +18,7 @@ learning path or stronger security approach is discovered.
    **Complete.**
 5. **Phase 5 — Bot Detection & Abuse Protection**
    Add layered defenses for automated and abusive requests.
-   **Not started.**
+   **Complete.**
 6. **Phase 6 — Audit, Monitoring & Security Testing**
    Improve observability and systematically test the security controls.
 7. **Phase 7 — Home Server Deployment & Public Access**
@@ -32,7 +32,8 @@ learning path or stronger security approach is discovered.
 Phase 2: COMPLETE
 Phase 3: COMPLETE
 Phase 4: COMPLETE
-Phase 5: NOT STARTED
+Phase 5: COMPLETE
+Phase 6: NOT STARTED
 ```
 
 Phase 1 is complete: Part 1 established the verified minimal FastAPI foundation,
@@ -79,8 +80,13 @@ authentication, MFA, session, authorized collection, and protected detail
 contracts without moving policy into the browser. Final hardening adds strict
 route-scoped browser headers/CSP, accessible and responsive states, safe
 text-only rendering, stale-operation guards, and an explicit local synthetic
-demo workflow. Phase 5 has not started and must begin with abuse-surface and
-rate-limit/challenge design before implementation.
+demo workflow. Phase 5 - Bot Detection & Abuse Protection is complete. It adds
+a centralized typed and bounded abuse-control engine, process-local ephemeral
+state behind a storage abstraction, HMAC correlation, layered authentication and
+availability controls, challenge-only MFA revocation, expensive-work concurrency,
+public GET/HEAD protection, an independent health endpoint, and minimal 429 UI
+compatibility. Phase 6 has not started and must begin with logging and monitoring
+inspection and design.
 
 ## Phase Completion and Handover Protocol
 
@@ -172,3 +178,110 @@ Use this hierarchy for normal project continuity:
 8. Next-phase opening prompt for operating instructions.
 
 A ZIP is not the primary source of truth.
+
+## Post-Project Learning and Security-Testing Roadmap
+
+This is future learning and authorized assessment work. It is **not complete**
+and does not replace or restructure the development phases above. AEGIS should
+be the primary practical teaching example wherever possible.
+
+```text
+Build AEGIS
+→ Learn AEGIS deeply
+→ Safely attack/test AEGIS
+→ Remediate weaknesses
+→ Retest
+→ Document learning and professional security assessment
+```
+
+### Application and backend foundations
+
+Study FastAPI, SQLAlchemy, PostgreSQL, Alembic, dependency injection, the
+request/response lifecycle, ORM and transaction behavior, migrations, and schema
+ownership by tracing real AEGIS flows and tests.
+
+### Authentication and identity security
+
+Practice password authentication, Argon2id password hashing, server-side
+sessions, cookies and secure attributes, session fixation prevention, session
+revocation, MFA/TOTP, and replay protection against the implemented boundaries.
+
+### Authorization
+
+Study RBAC, ABAC, combined RBAC/ABAC decisions, default deny, backend authority,
+clearance, departments, compartments, and object/resource authorization. Verify
+that direct requests cannot bypass the central evaluator.
+
+### Frontend and browser boundaries
+
+Learn HTML, CSS, JavaScript, Jinja2, browser request flow, and frontend/backend
+trust boundaries through the same-origin interface. The browser remains a
+presentation client, not an authorization authority.
+
+### Web application security
+
+Study CSP, security headers, XSS, CSRF, IDOR/BOLA, authentication and session
+attacks, authorization bypass testing, information disclosure, and safe error
+handling through both normal and adversarial requests.
+
+### Abuse protection
+
+Study rate limiting, throttling, cooldowns, concurrency limits, bot protection,
+false positives, NAT/shared-IP considerations, proxy/client-IP trust, and CAPTCHA
+tradeoffs. Compare Phase 5's bounded local controls with later distributed and
+edge designs.
+
+### Logging and monitoring
+
+Study security-event logging for authentication, authorization, abuse, and
+operational errors; alerting concepts; incident investigation; log privacy; and
+sensitive-data handling. Phase 6 should establish safe visibility before
+realistic structured attack exercises.
+
+### Development workflow
+
+Practice Git, GitHub, commits, branches, review, versioning, rollback/checkpoint
+concepts, and secure repository hygiene without committing secrets or generated
+local artifacts.
+
+### Deployment and infrastructure
+
+Later study server deployment, applicable Linux/server administration, HTTPS/TLS,
+certificates, DNS, Cloudflare, reverse proxies, trusted proxy headers,
+secrets/configuration, PostgreSQL deployment, least privilege, backups, and
+restore testing. These are not current implementation claims.
+
+### Vulnerability assessment and penetration testing
+
+Use AEGIS as the main authorized target. Practice vulnerability-assessment
+methodology, threat modeling, attack-surface mapping, manual testing,
+authenticated versus unauthenticated testing, API testing, and web application
+testing. Learn Burp Suite, OWASP ZAP, browser developer tools, safe command-line
+and API testing, and applicable OWASP testing methodology.
+
+### Network and server security testing
+
+After deployment readiness, assess exposed ports/services, firewall policy, TLS
+and server configuration, SSH and PostgreSQL exposure, reverse-proxy behavior,
+DNS/Cloudflare configuration, and service-account permissions. Testing must stay
+strictly within the user's own authorized lab, server, and application.
+
+### Remediation lifecycle
+
+```text
+Find weakness
+→ understand root cause
+→ assess severity
+→ implement remediation
+→ regression test
+→ retest exploit/path
+→ document evidence
+```
+
+### Professional security assessment report
+
+The final learning output should include an executive summary, scope,
+methodology, architecture summary, threat model, findings, severity/risk,
+evidence, remediation, retest results, residual risk, and lessons learned. It
+must distinguish verified evidence from assumptions and document authorization
+and synthetic-data constraints.

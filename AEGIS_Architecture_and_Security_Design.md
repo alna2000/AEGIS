@@ -16,6 +16,9 @@ intelligence, classifications, compartments, and events only.
 
 Phase 3 now implements the authorization and classified-record read subset
 described in the implementation-status sections at the end of this document.
+Phase 5 now implements the bounded local abuse-protection architecture documented
+in the final implementation-status section. Earlier design-status blocks are
+historical context and do not override later verified implementation sections.
 Design statements outside those sections remain future requirements unless they
 are explicitly identified as implemented and tested.
 
@@ -1199,7 +1202,8 @@ metadata load only after their applicable explicit authorization decisions.
 Phase 2: COMPLETE
 Phase 3: COMPLETE
 Phase 4: COMPLETE
-Phase 5: NOT STARTED
+Phase 5: COMPLETE
+Phase 6: NOT STARTED
 ```
 
 The implemented HTTP boundary is read-only: `GET /records` and
@@ -1239,14 +1243,14 @@ fallback that exposes no authenticated data.
 
 The deterministic local demo bootstrap is explicit development/test tooling,
 requires `AEGIS_DEMO_PASSWORD`, hashes with the existing password service,
-verifies Alembic revision `20260823_0006`, and executes atomically/idempotently.
+verified the then-current Phase 4 Alembic revision `20260823_0006`, and executes
+atomically/idempotently. Its current revision guard follows the later Alembic head.
 It is neither an endpoint nor a startup seeder. Local PostgreSQL uses separate
 owner/migration/bootstrap and least-privileged runtime identities; the runtime
 does not own the schema or receive DDL privileges.
 
-Phase 4 is complete. Phase 5 bot detection and abuse protection is not started.
-It must preserve all authentication/authorization boundaries and begin with a
-privacy- and accessibility-aware abuse threat model and architecture review.
+Phase 4 is complete. The later Phase 5 implementation-status section records the
+completed privacy- and accessibility-aware abuse-protection work.
 
 The policy-first/content-second design revalidates identity, classification, and
 lifecycle consistency after authorization, but it does not claim to solve all
@@ -1254,3 +1258,56 @@ concurrent mutation TOCTOU. Before production mutation workflows are introduced,
 their owning design must define transaction isolation, versioning, or equivalent
 controls and atomic persistent authorization audit semantics. All AEGIS data
 remains fictional and synthetic.
+
+## Phase 5 implementation and closure status
+
+Phase 5 implements layered abuse protection without changing the authentication
+or authorization decisions that protect AEGIS data. A centralized typed engine
+returns explicit admission, cooldown, and capacity decisions. Its store is an
+abstracted, bounded, in-process, ephemeral implementation: entries expire, total
+cardinality is capped, admission across multiple scopes is atomic, and expected
+store failures have explicit endpoint-owned behavior. State resets on restart
+and is neither shared between workers nor production distributed protection.
+
+Limiter state uses HMAC-derived correlation values rather than raw security
+identifiers. Policies combine only the scopes needed by an endpoint family,
+including global, endpoint, direct client host, server-resolved session identity,
+and submitted-username correlation for password login. No limiter stores a
+plaintext username, raw session/challenge token, TOTP code, password, request
+body, record code, or authorization attributes. Forwarded headers are not trusted.
+
+Password-login admission occurs before real or dummy Argon2 work and combines
+source and HMAC username layers without revealing which layer acted. MFA
+admission occurs before presented-factor verification. Short cooldowns slow
+repeated failures; the fifth persisted failed factor attempt revokes only that
+password-issued MFA challenge. It does not lock the account, revoke unrelated
+sessions, add CAPTCHA, or fingerprint a device/browser. A new successful password
+flow can create a new challenge and recover normally.
+
+`/auth/me`, logout, record collection/detail, and public availability routes have
+family-specific budgets. Logout fails open only for the controlled expected
+abuse-store-unavailable result so a user retains a recovery path; programming,
+contract, database, and unrelated failures do not cross that boundary. Record
+collection and detail share a global expensive-work concurrency budget and use
+separate per-session leases. All acquired leases release on success, hidden 404,
+authorization/infrastructure 503, and unexpected exceptions. No record code or
+record policy attribute participates in limiter state, so a 429 discloses no
+existence or authorization result.
+
+Public availability middleware protects GET and supported HEAD work for `/`,
+`/ui`, `/static/*`, `/docs`, `/docs/oauth2-redirect`, `/redoc`, and
+`/openapi.json`, including ordinary query strings and reviewed trailing-slash
+behavior without rewriting routing semantics. `/health` is deliberately outside
+the abuse store, database dependencies, and ordinary public budget, so it remains
+a minimal process-health signal when abuse-control state is unavailable.
+
+The browser maps `/auth/me`, record collection, and record-detail 429 responses
+to a generic temporary-unavailable state without displaying limiter scope or
+treating `Retry-After` as remaining security attempts. Existing stale-response
+and focus protections remain intact.
+
+Production distributed counters, Redis/shared state, trusted reverse-proxy
+identity, edge/CDN controls, persistent abuse audit, full detection/alerting, and
+deployment limits remain later-phase work. Phase 6 must design safe security
+logging, monitoring, audit visibility, and detection before implementation;
+Phase 7 retains deployment and shared/edge enforcement ownership.

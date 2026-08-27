@@ -2,9 +2,10 @@
 
 ```text
 Project: AEGIS - Classified Intelligence Access System
-Completed Phase: Phase 4 - Modern Security Interface
+Completed Phase: Phase 5 - Bot Detection & Abuse Protection
 Status: COMPLETE
-Current Phase: Phase 5 - Bot Detection & Abuse Protection
+Current Phase: Phase 6 - Security Logging, Monitoring, Audit Visibility, and Detection
+Phase 1: COMPLETE
 Phase 2: COMPLETE
 Phase 3: COMPLETE
 Phase 3 Part 1: COMPLETE / CHECKPOINTED
@@ -12,7 +13,8 @@ Phase 3 Part 2: COMPLETE / CHECKPOINTED
 Phase 3 Part 3: COMPLETE / CHECKPOINTED
 Phase 3 Part 4: COMPLETE / CHECKPOINTED
 Phase 4: COMPLETE / CHECKPOINTED
-Phase 5: NOT STARTED
+Phase 5: COMPLETE / CHECKPOINTED
+Phase 6: NOT STARTED
 ```
 
 ## What AEGIS is
@@ -463,8 +465,8 @@ only record code/title/classification, and return `[]` when nothing is accessibl
 Collection evaluation is intentionally capped at 100 deterministic candidates;
 a 101st candidate fails closed with `503`.
 
-Phase 3 introduced revisions `20260822_0005` and `20260823_0006`; current Alembic
-head is `20260823_0006`. Closure verification uses the full 269-test suite plus
+Phase 3 introduced revisions `20260822_0005` and `20260823_0006`; at Phase 3
+closure the Alembic head was `20260823_0006`. Closure verification used the full 269-test suite plus
 focused authentication, authorization, record, detail, collection, and migration
 regressions. The final Phase 3 closure checkpoint is the repository HEAD carrying
 `Complete AEGIS Phase 3 and prepare Phase 4 handover`; Git history is authoritative
@@ -475,13 +477,14 @@ login, the existing MFA challenge, current identity, logout, backend-authorized
 record collection, and generic hidden detail while performing no authorization.
 Local CSS and plain JavaScript provide responsive, accessible, stale-operation-
 guarded presentation under a strict route-scoped CSP. The explicit local demo
-bootstrap is development/test-only, transactional, idempotent, and guarded by
-Alembic revision `20260823_0006`.
+bootstrap was development/test-only, transactional, idempotent, and guarded by
+the then-current Alembic revision `20260823_0006`.
 
-Phase 5 is **NOT STARTED**. It must begin with repository inspection,
-authentication/session-flow review, abuse threat modeling, and rate-limit/
-challenge design. Persistent audit remains primarily Phase 6 and deployment
-Phase 7.
+At this Phase 4 handover boundary, Phase 5 was **NOT STARTED** and was required to
+begin with repository inspection, authentication/session-flow review, abuse
+threat modeling, and rate-limit/challenge design. The later Phase 5 completion
+boundary below supersedes this historical status. Persistent audit remains
+primarily Phase 6 and deployment Phase 7.
 
 Known limitations remain: the read-only policy/representation boundary does not
 solve future concurrent-mutation TOCTOU; proper isolation/versioning must precede
@@ -499,5 +502,80 @@ text-only DOM rendering, no client authorization vocabulary, accessible focus
 and live states, a JavaScript-failure fallback, guarded stale identity/record
 operations, responsive wrapping, and preservation of backend regressions.
 
-`AEGIS_Phase5_Opening_Prompt.md` is the mandatory design-first handoff. Phase 5
-implementation has not started.
+`AEGIS_Phase5_Opening_Prompt.md` was the mandatory design-first handoff used to
+begin the now-complete Phase 5 and is retained as historical operating context.
+
+## Phase 5 completion boundary
+
+Phase 5 is **COMPLETE** and Phase 6 is **NOT STARTED**. Phase 5 began with an
+abuse-surface/threat-model review and delivered a centralized typed abuse-control
+engine, bounded in-process state behind an explicit storage abstraction,
+HMAC-derived correlation keys, and deterministic endpoint-family policies.
+
+Implemented protection includes password-login admission before real or dummy
+Argon2 work; submitted-username correlation without plaintext state; MFA
+presented-token admission; short progressive cooldowns; five persisted failed
+factor attempts per challenge; challenge-only terminal revocation; `/auth/me`,
+recovery-safe logout, record collection/detail budgets; shared global and
+per-session expensive-work leases; public/static/docs GET and HEAD protection;
+the reviewed HEAD/OAuth-path correction; `/health` independence; and minimal UI
+handling of generic temporary-unavailable responses.
+
+Abuse state is deliberately:
+
+```text
+single-process
+ephemeral
+bounded
+reset on restart
+not distributed
+```
+
+It does not provide production-grade distributed or edge protection. Redis or
+shared hot-path counters, trusted proxy configuration, reverse-proxy controls,
+Cloudflare, and deployment rate limits remain Phase 7/deployment scope. Phase 5
+adds no CAPTCHA, browser/device fingerprinting, account lockout, authorization
+cache, persistent abuse audit, or forwarded-header trust.
+
+The authoritative Phase 5 implementation checkpoints are:
+
+```text
+Part 2:
+5ea244aba0185bfe4374d0a2177eacc384b6c947
+Add bounded abuse-control foundation
+
+Part 3:
+2c84ae62f30c01988f0ab82b11ffde33d971352e
+Protect login and MFA from automated abuse
+
+Part 4:
+2b323baea4a8310c7560fbf0d25fe8f12279fc30
+Protect authenticated and public endpoints from abuse
+```
+
+The current Alembic head is `20260826_0007`. The accepted pre-closure automated
+baseline is `362 passed, 2 known warnings`; the Phase 5 closure verification may
+supersede that number if additional documentation-independent tests exist.
+
+### Phase 5 local browser closure observation
+
+A local browser run started the application successfully, loaded `/ui`, accepted
+the synthetic `demo.analyst` login, and provided the normal authenticated UI and
+record workflow without an immediate Phase 5 blocking regression. The current
+demo account did not present an MFA/TOTP flow, so manual five-failure MFA testing
+was not completed. Deliberate realistic abuse testing was also not comprehensive
+during Phase 5. This is not treated as an implementation defect because the
+implemented controls have deterministic automated coverage.
+
+After Phase 6 provides logging and monitoring visibility, create or use fully
+configured synthetic accounts with password authentication, enrolled MFA/TOTP,
+roles, departments, clearances, compartments, and both authorized and
+unauthorized record scenarios. Then conduct a structured local test covering
+wrong passwords, login 429, MFA failures and cooldowns, fifth-failure challenge
+revocation, recovery through a new challenge, sessions, logout, collection and
+detail authorization, hidden 404, rate limits, concurrency protection, and
+audit/log visibility. Use synthetic/test data only.
+
+`AEGIS_Phase6_Opening_Prompt.md` is the mandatory design-first Phase 6 handoff.
+No Phase 6 logging, monitoring, persistence, SIEM, or detection implementation
+has started.

@@ -10,8 +10,9 @@ finite hash-only server-side sessions, and the encrypted service-layer TOTP
 credential foundation plus short-lived hash-only MFA challenges and final TOTP
 session issuance. **Phase 3 - Authorization & Classified Records is complete;
 Parts 1-4 are implemented, security-reviewed, verified, and checkpointed. Phase
-4 - Modern Security Interface is complete, security-reviewed, verified, and
-checkpointed. Phase 5 - Bot Detection & Abuse Protection has not started.**
+4 - Modern Security Interface and Phase 5 - Bot Detection & Abuse Protection
+are complete, security-reviewed, verified, and checkpointed. Phase 6 - Security
+Logging, Monitoring, Audit Visibility, and Detection has not started.**
 Authentication still proves identity only and grants no authorization.
 PostgreSQL remains the application target and is not provisioned by this repository.
 
@@ -19,7 +20,8 @@ PostgreSQL remains the application target and is not provisioned by this reposit
 Phase 2: COMPLETE
 Phase 3: COMPLETE
 Phase 4: COMPLETE
-Phase 5: NOT STARTED
+Phase 5: COMPLETE
+Phase 6: NOT STARTED
 ```
 
 Phase 3 Part 1 adds controlled role, department, clearance, and compartment
@@ -146,7 +148,7 @@ For local manual testing, first apply migrations and create an active synthetic
 user through the explicit local bootstrap command; no public account or MFA
 enrollment endpoint exists. The command refuses every environment except
 `development` and `test`, requires the database to be exactly at Alembic revision
-`20260823_0006`, and commits its deterministic synthetic fixture atomically.
+`20260826_0007`, and commits its deterministic synthetic fixture atomically.
 It never runs during application startup or migration execution.
 
 Set the demo password only in the current process environment, run the command,
@@ -213,9 +215,19 @@ text-only DOM construction, stores no tokens, and performs no authorization.
 permissions headers, accessible state and focus handling, responsive local CSS,
 stale-operation guards, and a safe JavaScript-failure fallback. Record creation
 or mutation, assignment administration, rich search, pagination, persistent
-authorization audit, bot protection, monitoring, and deployment are not
-available backend capabilities.
+authorization audit, monitoring, and deployment are not available backend
+capabilities.
 
-See `Phase_4_Completion_Summary.md` for the completed UI/security boundary.
-Phase 5 must begin by reading `AEGIS_Phase5_Opening_Prompt.md` and reviewing the
-authentication/session abuse surface before any bot-protection implementation.
+Phase 5 adds bounded typed abuse decisions, atomic multi-scope fixed-window
+admission, short cooldowns, concurrency leases, HMAC correlation, login and MFA
+protection, challenge-only fifth-failure revocation, authenticated-record and
+public GET/HEAD availability protection, `/health` independence, and generic UI
+429 compatibility. The store is deliberately single-process, ephemeral, bounded,
+and reset on restart; it is not distributed or edge protection. A structured
+manual security exercise with fully configured synthetic MFA accounts is planned
+after Phase 6 supplies safe audit/monitoring visibility and the applicable
+deployment boundary is ready.
+
+See `Phase_5_Completion_Summary.md` for the completed abuse-protection boundary.
+Phase 6 must begin with `AEGIS_Phase6_Opening_Prompt.md`; no Phase 6 implementation
+has started.
