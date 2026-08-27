@@ -1311,3 +1311,38 @@ identity, edge/CDN controls, persistent abuse audit, full detection/alerting, an
 deployment limits remain later-phase work. Phase 6 must design safe security
 logging, monitoring, audit visibility, and detection before implementation;
 Phase 7 retains deployment and shared/edge enforcement ownership.
+
+## Phase 6 Part 1 implementation status
+
+Part 1 implements the smallest persistent append-oriented audit foundation. The
+event code is authoritative; event family is derived and is not stored as an
+independently contradictable column. Each code has application-defined outcome,
+severity, action, and reason-presence semantics. Immutable typed drafts allow only
+UUID identities, controlled actor/target/reason concepts, and an optional opaque
+32-byte source correlation plus bounded key ID. Part 1 does not generate source
+correlations and does not reuse Phase 5 abuse secrets.
+
+`audit_events` stores a server-generated UUID, aware UTC occurrence time,
+controlled code/outcome/severity/actor/action/reason values, nullable restrictive
+actor and subject user references, optional controlled target plus internal UUID,
+nullable server request UUID, and paired nullable source-correlation fields. It
+has no family, metadata, `updated_at`, deletion/lifecycle field, username, raw IP,
+user agent, credential, token, cookie, request body, exception, policy dump, or
+intelligence content column.
+
+Migration `20260827_0008` creates the table after `20260826_0007` with controlled
+checks, restrictive user foreign keys, and initial indexes for stable occurrence
+ordering, event-code/time, actor/time, and request lookup. The application writer
+accepts only a typed event, constructs a new ORM row, adds and flushes it, and
+offers no update, delete, query, or commit method. The audit service injects UUID
+and clock generation and delegates to that writer. A future security-state caller
+can therefore stage state and mandatory evidence in one SQLAlchemy transaction
+and own the single commit or rollback.
+
+Append orientation is currently enforced through schema shape and narrow
+application APIs. Intended PostgreSQL privileges are runtime INSERT and later
+authorized SELECT without ordinary UPDATE/DELETE; production grants remain a
+deployment responsibility and are not claimed as locally enforced. Current
+authentication/TOTP logging is unchanged and remains non-persistent. Event
+producer integration, query authorization/API/UI, detections, retention jobs,
+SIEM export, and Phase 7 controls are not implemented in Part 1.

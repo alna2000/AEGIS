@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Uuid,
     text,
@@ -771,3 +772,115 @@ class MfaChallenge(Base):
     user_agent: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="mfa_challenges")
+
+
+class AuditEvent(Base):
+    """Append-oriented durable security evidence with controlled fields only."""
+
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event_code IN ("
+            "'PASSWORD_AUTH_SUCCEEDED', 'PASSWORD_AUTH_FAILED', "
+            "'MFA_FACTOR_SUCCEEDED', 'MFA_FACTOR_FAILED', "
+            "'MFA_CHALLENGE_EXHAUSTED', 'SESSION_ESTABLISHED', "
+            "'SESSION_REVOKED', 'AUTHORIZATION_ALLOWED', "
+            "'AUTHORIZATION_DENIED', 'AUTHORIZATION_ERROR', "
+            "'RESOURCE_READ_SUCCEEDED', 'RESOURCE_READ_INACCESSIBLE', "
+            "'ABUSE_ADMISSION_DENIED', 'ABUSE_STORE_UNAVAILABLE', "
+            "'CONCURRENCY_SATURATED', 'AUDIT_PERSISTENCE_FAILED')",
+            name="ck_audit_events_event_code_controlled",
+        ),
+        CheckConstraint(
+            "outcome IN ('SUCCESS', 'FAILURE', 'ALLOW', 'DENY', 'LIMITED', 'ERROR')",
+            name="ck_audit_events_outcome_controlled",
+        ),
+        CheckConstraint(
+            "severity IN ('INFORMATIONAL', 'LOW', 'MEDIUM', 'HIGH')",
+            name="ck_audit_events_severity_controlled",
+        ),
+        CheckConstraint(
+            "actor_type IN ('ANONYMOUS', 'USER', 'SYSTEM')",
+            name="ck_audit_events_actor_type_controlled",
+        ),
+        CheckConstraint(
+            "action IN ('AUTHENTICATE', 'VERIFY_MFA', 'ESTABLISH_SESSION', "
+            "'REVOKE_SESSION', 'AUTHORIZE', 'READ_RESOURCE', "
+            "'APPLY_ABUSE_CONTROL', 'PERSIST_AUDIT')",
+            name="ck_audit_events_action_controlled",
+        ),
+        CheckConstraint(
+            "target_type IS NULL OR target_type IN ('USER', 'MFA_CHALLENGE', "
+            "'SESSION', 'INTELLIGENCE_RECORD', 'ENDPOINT', 'AUDIT_EVENT', "
+            "'SECURITY_SUBSYSTEM')",
+            name="ck_audit_events_target_type_controlled",
+        ),
+        CheckConstraint(
+            "reason_code IS NULL OR reason_code IN ("
+            "'CREDENTIALS_REJECTED', 'ACCOUNT_UNUSABLE', 'IDENTIFIER_REJECTED', "
+            "'TOTP_REJECTED', 'TOTP_REPLAYED', 'MFA_CREDENTIAL_UNUSABLE', "
+            "'CHALLENGE_FAILURE_LIMIT', 'POLICY_DENIED', "
+            "'POLICY_EVALUATION_ERROR', 'RESOURCE_INACCESSIBLE', 'RATE_LIMIT', "
+            "'COOLDOWN', 'CONCURRENCY', 'STORE_CAPACITY', 'STORE_UNAVAILABLE', "
+            "'DATABASE_ERROR', 'AUDIT_ERROR')",
+            name="ck_audit_events_reason_code_controlled",
+        ),
+        CheckConstraint(
+            "(actor_type = 'USER' AND actor_user_id IS NOT NULL) OR "
+            "(actor_type IN ('ANONYMOUS', 'SYSTEM') AND actor_user_id IS NULL)",
+            name="ck_audit_events_actor_identity_consistent",
+        ),
+        CheckConstraint(
+            "subject_user_id IS NULL OR actor_user_id IS NULL OR "
+            "subject_user_id <> actor_user_id",
+            name="ck_audit_events_subject_distinct",
+        ),
+        CheckConstraint(
+            "target_id IS NULL OR target_type IS NOT NULL",
+            name="ck_audit_events_target_consistent",
+        ),
+        CheckConstraint(
+            "actor_type = 'SYSTEM' OR request_id IS NOT NULL",
+            name="ck_audit_events_request_context_consistent",
+        ),
+        CheckConstraint(
+            "(source_correlation IS NULL AND source_key_id IS NULL) OR "
+            "(source_correlation IS NOT NULL AND length(source_correlation) = 32 "
+            "AND source_key_id IS NOT NULL AND length(source_key_id) BETWEEN 1 AND 32)",
+            name="ck_audit_events_source_consistent",
+        ),
+        Index("ix_audit_events_occurred_id", "occurred_at", "id"),
+        Index("ix_audit_events_code_occurred", "event_code", "occurred_at"),
+        Index("ix_audit_events_actor_occurred", "actor_user_id", "occurred_at"),
+        Index("ix_audit_events_request_id", "request_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    occurred_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    event_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    subject_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    target_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    target_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    request_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), nullable=True
+    )
+    source_correlation: Mapped[bytes | None] = mapped_column(
+        LargeBinary(32), nullable=True
+    )
+    source_key_id: Mapped[str | None] = mapped_column(String(32), nullable=True)

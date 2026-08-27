@@ -31,6 +31,7 @@ def test_environment_database_url_supports_percent_without_credential_output(
 
     configured_url = config.get_main_option("sqlalchemy.url")
     captured = capsys.readouterr()
+    assert "CREATE TABLE audit_events" in captured.out
     assert configured_url == database_url
     assert make_url(configured_url).password == synthetic_password
     assert database_url not in captured.out
@@ -562,4 +563,83 @@ def test_mfa_failure_bound_migration_round_trips_only_its_column(
         column["name"] for column in inspector.get_columns("mfa_challenges")
     } == before_columns
     assert set(inspector.get_table_names()) == before_tables
+    engine.dispose()
+
+
+def test_audit_event_migration_adds_controlled_append_schema_and_downgrades(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "audit-event-round-trip.sqlite3"
+    database_url = f"sqlite+pysqlite:///{database_path.as_posix()}"
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(config, "20260826_0007")
+
+    engine = create_engine(database_url)
+    assert "audit_events" not in inspect(engine).get_table_names()
+    engine.dispose()
+
+    command.upgrade(config, "20260827_0008")
+    engine = create_engine(database_url)
+    inspector = inspect(engine)
+    assert {column["name"] for column in inspector.get_columns("audit_events")} == {
+        "id",
+        "occurred_at",
+        "event_code",
+        "outcome",
+        "severity",
+        "actor_type",
+        "actor_user_id",
+        "subject_user_id",
+        "target_type",
+        "target_id",
+        "action",
+        "reason_code",
+        "request_id",
+        "source_correlation",
+        "source_key_id",
+    }
+    assert tuple(inspector.get_pk_constraint("audit_events")["constrained_columns"]) == (
+        "id",
+    )
+    foreign_keys = {
+        tuple(item["constrained_columns"]): item
+        for item in inspector.get_foreign_keys("audit_events")
+    }
+    assert foreign_keys[("actor_user_id",)]["referred_table"] == "users"
+    assert foreign_keys[("subject_user_id",)]["referred_table"] == "users"
+    assert all(item["options"].get("ondelete") == "RESTRICT" for item in foreign_keys.values())
+    check_names = {
+        item["name"] for item in inspector.get_check_constraints("audit_events")
+    }
+    assert {
+        "ck_audit_events_event_code_controlled",
+        "ck_audit_events_outcome_controlled",
+        "ck_audit_events_severity_controlled",
+        "ck_audit_events_actor_type_controlled",
+        "ck_audit_events_action_controlled",
+        "ck_audit_events_target_type_controlled",
+        "ck_audit_events_reason_code_controlled",
+        "ck_audit_events_actor_identity_consistent",
+        "ck_audit_events_subject_distinct",
+        "ck_audit_events_target_consistent",
+        "ck_audit_events_request_context_consistent",
+        "ck_audit_events_source_consistent",
+    } <= check_names
+    indexes = {
+        item["name"]: tuple(item["column_names"])
+        for item in inspector.get_indexes("audit_events")
+    }
+    assert indexes == {
+        "ix_audit_events_actor_occurred": ("actor_user_id", "occurred_at"),
+        "ix_audit_events_code_occurred": ("event_code", "occurred_at"),
+        "ix_audit_events_occurred_id": ("occurred_at", "id"),
+        "ix_audit_events_request_id": ("request_id",),
+    }
+    engine.dispose()
+
+    command.downgrade(config, "20260826_0007")
+    engine = create_engine(database_url)
+    assert "audit_events" not in inspect(engine).get_table_names()
+    assert "mfa_challenges" in inspect(engine).get_table_names()
     engine.dispose()

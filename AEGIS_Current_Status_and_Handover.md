@@ -14,7 +14,8 @@ Phase 3 Part 3: COMPLETE / CHECKPOINTED
 Phase 3 Part 4: COMPLETE / CHECKPOINTED
 Phase 4: COMPLETE / CHECKPOINTED
 Phase 5: COMPLETE / CHECKPOINTED
-Phase 6: NOT STARTED
+Phase 6: IN PROGRESS
+Phase 6 Part 1: IMPLEMENTED LOCALLY / PENDING REVIEW
 ```
 
 ## What AEGIS is
@@ -579,3 +580,25 @@ audit/log visibility. Use synthetic/test data only.
 `AEGIS_Phase6_Opening_Prompt.md` is the mandatory design-first Phase 6 handoff.
 No Phase 6 logging, monitoring, persistence, SIEM, or detection implementation
 has started.
+
+## Phase 6 Part 1 local implementation status
+
+Phase 6 is **IN PROGRESS**. Part 1 implements the typed, persistent audit
+foundation only and is pending review/checkpoint. It adds a controlled event-code
+vocabulary whose family, outcome, severity, and action are derived in application
+code; immutable allowlisted event drafts; server-generated UUID/time support; an
+append-oriented `audit_events` model and migration `20260827_0008`; and a
+writer/service boundary that flushes but never commits the caller-owned
+transaction.
+
+The schema contains controlled identifiers and optional internal user/target and
+future source-correlation fields. It contains no generic metadata, raw source IP,
+username, credential, token, cookie, request body, exception dump, authorization
+attribute dump, or classified content field. User references are restrictive.
+Normal application architecture exposes insertion only; future PostgreSQL table
+grants should allow runtime INSERT and separately authorized SELECT, without
+ordinary UPDATE or DELETE. Deployment owns actual production grants.
+
+No existing authentication logger or event producer is integrated yet. No audit
+query API, UI, detection, SIEM export, Phase 7 work, or `/health` dependency was
+added. Those remain later reviewed Phase 6 parts.
