@@ -238,7 +238,7 @@ def test_collection_flow_is_guarded_and_fails_closed_structurally() -> None:
     assert "if (records.length === 0)" in script
     assert "if (response.status === 401)" in script
     assert "clearAuthenticatedPresentation();" in script
-    assert "if (response.status === 503)" in script
+    assert "if (response.status === 429 || response.status === 503)" in script
     assert "void loadRecords();" in script
     assert "recordRequestVersion += 1;" in script
 
@@ -273,7 +273,7 @@ def test_detail_flow_is_authenticated_guarded_and_invalidated_structurally() -> 
     assert "function returnToRecordCollection()" in script
     assert "clearAuthenticatedPresentation();" in script
     assert "if (response.status === 404)" in script
-    assert "if (response.status === 503)" in script
+    assert "if (response.status === 429 || response.status === 503)" in script
     assert "detailContent.textContent = record.content;" in script
 
 

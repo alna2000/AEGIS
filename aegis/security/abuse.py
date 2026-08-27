@@ -109,6 +109,8 @@ class FixedAbuseScope(str, Enum):
     LOGIN_ENDPOINT = "login-endpoint"
     MFA_ENDPOINT = "mfa-endpoint"
     SESSION_ENDPOINT = "session-endpoint"
+    AUTH_ME_ENDPOINT = "auth-me-endpoint"
+    LOGOUT_ENDPOINT = "logout-endpoint"
     RECORD_COLLECTION_ENDPOINT = "record-collection-endpoint"
     RECORD_DETAIL_ENDPOINT = "record-detail-endpoint"
     PUBLIC_ENDPOINT = "public-endpoint"

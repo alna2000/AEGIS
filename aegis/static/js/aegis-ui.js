@@ -528,7 +528,7 @@ async function loadRecordDetail() {
       );
       return;
     }
-    if (response.status === 503) {
+    if (response.status === 429 || response.status === 503) {
       setDetailState(
         DETAIL_STATES.SERVICE_UNAVAILABLE,
         "Classified record service unavailable.",
@@ -617,7 +617,7 @@ async function loadRecords() {
       setState(UI_STATES.LOGIN, "Your session is no longer available. Sign in again.");
       return;
     }
-    if (response.status === 503) {
+    if (response.status === 429 || response.status === 503) {
       setRecordState(
         RECORD_STATES.SERVICE_UNAVAILABLE,
         "Classified record service unavailable.",
@@ -699,7 +699,7 @@ async function resolveIdentity() {
       setState(UI_STATES.LOGIN, "Sign in is required.");
       return;
     }
-    if (response.status === 503) {
+    if (response.status === 429 || response.status === 503) {
       showServiceUnavailable();
       return;
     }

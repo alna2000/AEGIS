@@ -24,6 +24,7 @@ from aegis.db.session import create_database_engine, create_session_factory
 from aegis.security.audit_sinks import LoggingAuthenticationAuditSink
 from aegis.security.authentication_events import AuthenticationAuditSink
 from aegis.security.authentication_abuse import AuthenticationAbuseControl
+from aegis.security.availability_abuse import AvailabilityAbuseControl
 from aegis.security.passwords import PasswordService
 from aegis.security.mfa_encryption import MfaKeyConfigurationError, MfaSecretCipher
 from aegis.security.totp import TotpService
@@ -70,6 +71,12 @@ def get_authentication_abuse_control(request: Request) -> AuthenticationAbuseCon
     """Return the single abuse-control runtime owned by this application."""
 
     return request.app.state.authentication_abuse_control
+
+
+def get_availability_abuse_control(request: Request) -> AvailabilityAbuseControl:
+    """Return the single Part 4 availability runtime owned by this application."""
+
+    return request.app.state.availability_abuse_control
 
 
 def get_authentication_service(

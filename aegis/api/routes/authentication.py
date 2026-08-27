@@ -12,7 +12,7 @@ from aegis.api.dependencies import (
     get_authentication_abuse_control,
     get_authentication_audit_sink,
     get_authentication_service,
-    get_current_principal,
+    get_availability_abuse_control,
     get_db_session,
     get_mfa_challenge_service,
     get_mfa_service,
@@ -25,11 +25,8 @@ from aegis.security.authentication_events import (
 )
 from aegis.security.abuse import AbuseDecision, AbuseDecisionStatus
 from aegis.security.authentication_abuse import AuthenticationAbuseControl
-from aegis.services.authentication import (
-    AuthenticatedPrincipal,
-    AuthenticationService,
-    LoginAttemptStatus,
-)
+from aegis.security.availability_abuse import AvailabilityAbuseControl
+from aegis.services.authentication import AuthenticationService, LoginAttemptStatus
 from aegis.services.mfa import MfaService, MfaVerificationStatus
 from aegis.services.mfa_challenges import MfaChallengeService
 from aegis.services.sessions import SessionService
@@ -287,13 +284,24 @@ def verify_totp(
 
 @router.get("/me", response_model=CurrentIdentityResponse)
 def current_identity(
-    principal: Annotated[AuthenticatedPrincipal, Depends(get_current_principal)],
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    sessions: Annotated[SessionService, Depends(get_session_service)],
+    availability: Annotated[
+        AvailabilityAbuseControl, Depends(get_availability_abuse_control)
+    ],
 ) -> CurrentIdentityResponse:
     """Return safe identity only for a currently usable authenticated session."""
 
+    context = _request_context(request)
+    _enforce_availability_decision(availability.admit_auth_me_outer(context))
+    resolved = _resolve_session(request, settings, sessions)
+    _enforce_availability_decision(
+        availability.admit_auth_me_session(resolved.session_id)
+    )
     return CurrentIdentityResponse(
-        username=principal.username,
-        display_name=principal.display_name,
+        username=resolved.principal.username,
+        display_name=resolved.principal.display_name,
     )
 
 
@@ -307,9 +315,17 @@ def logout(
     challenges: Annotated[
         MfaChallengeService, Depends(get_mfa_challenge_service)
     ],
+    availability: Annotated[
+        AvailabilityAbuseControl, Depends(get_availability_abuse_control)
+    ],
 ) -> None:
     """Revoke a presented server-side session and remove its client cookie."""
 
+    decision = availability.admit_logout(_request_context(request))
+    if decision.status is AbuseDecisionStatus.LIMITED:
+        _enforce_availability_decision(decision)
+    # Logout is a recovery operation and fails open only for controlled abuse
+    # store unavailability; database revocation failures still return 503.
     try:
         sessions.revoke_session(request.cookies.get(settings.session_cookie_name))
         challenges.revoke(
@@ -337,3 +353,42 @@ def logout(
         httponly=True,
         samesite="strict",
     )
+
+
+def _enforce_availability_decision(decision: AbuseDecision) -> None:
+    if decision.status is AbuseDecisionStatus.ALLOW:
+        return
+    if decision.status is AbuseDecisionStatus.LIMITED:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Request temporarily unavailable",
+            headers={
+                "Cache-Control": "no-store",
+                "Retry-After": str(decision.retry_after_seconds),
+            },
+        )
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=_GENERIC_SERVICE_FAILURE,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _resolve_session(
+    request: Request, settings: Settings, sessions: SessionService
+):
+    try:
+        resolved = sessions.resolve_session(
+            request.cookies.get(settings.session_cookie_name)
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_GENERIC_SERVICE_FAILURE,
+        ) from None
+    if resolved is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+    return resolved
