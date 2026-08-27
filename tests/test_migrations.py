@@ -6,7 +6,9 @@ import uuid
 
 from alembic import command
 from alembic.config import Config
+import pytest
 from sqlalchemy import MetaData, Table, create_engine, inspect, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import make_url
 
 
@@ -32,6 +34,8 @@ def test_environment_database_url_supports_percent_without_credential_output(
     configured_url = config.get_main_option("sqlalchemy.url")
     captured = capsys.readouterr()
     assert "CREATE TABLE audit_events" in captured.out
+    assert "MFA_CHALLENGE_ISSUED" in captured.out
+    assert "LOGOUT_SUCCEEDED" in captured.out
     assert configured_url == database_url
     assert make_url(configured_url).password == synthetic_password
     assert database_url not in captured.out
@@ -642,4 +646,99 @@ def test_audit_event_migration_adds_controlled_append_schema_and_downgrades(
     engine = create_engine(database_url)
     assert "audit_events" not in inspect(engine).get_table_names()
     assert "mfa_challenges" in inspect(engine).get_table_names()
+    engine.dispose()
+
+
+def test_part_2_audit_code_extension_round_trips_only_the_constraint(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "part2-audit-code-round-trip.sqlite3"
+    database_url = f"sqlite+pysqlite:///{database_path.as_posix()}"
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(config, "20260827_0008")
+
+    engine = create_engine(database_url)
+    before = inspect(engine)
+    before_columns = {
+        column["name"] for column in before.get_columns("audit_events")
+    }
+    before_indexes = {
+        item["name"]: tuple(item["column_names"])
+        for item in before.get_indexes("audit_events")
+    }
+    audit_events = Table("audit_events", MetaData(), autoload_with=engine)
+    base_values = {
+        "occurred_at": datetime(2026, 8, 27, 15, 0, tzinfo=timezone.utc),
+        "outcome": "SUCCESS",
+        "severity": "INFORMATIONAL",
+        "actor_type": "SYSTEM",
+        "actor_user_id": None,
+        "subject_user_id": None,
+        "target_type": None,
+        "target_id": None,
+        "action": "VERIFY_MFA",
+        "reason_code": None,
+        "request_id": uuid.uuid4().hex,
+        "source_correlation": None,
+        "source_key_id": None,
+    }
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            audit_events.insert().values(
+                id=uuid.uuid4().hex,
+                event_code="MFA_CHALLENGE_ISSUED",
+                **base_values,
+            )
+        )
+    engine.dispose()
+
+    command.upgrade(config, "20260827_0009")
+    engine = create_engine(database_url)
+    inspector = inspect(engine)
+    assert {column["name"] for column in inspector.get_columns("audit_events")} == before_columns
+    assert {
+        item["name"]: tuple(item["column_names"])
+        for item in inspector.get_indexes("audit_events")
+    } == before_indexes
+    audit_events = Table("audit_events", MetaData(), autoload_with=engine)
+    with engine.begin() as connection:
+        connection.execute(
+            audit_events.insert(),
+            [
+                {
+                    "id": uuid.uuid4().hex,
+                    "event_code": "MFA_CHALLENGE_ISSUED",
+                    **base_values,
+                },
+                {
+                    "id": uuid.uuid4().hex,
+                    "event_code": "LOGOUT_SUCCEEDED",
+                    "action": "REVOKE_SESSION",
+                    **{key: value for key, value in base_values.items() if key != "action"},
+                },
+            ],
+        )
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            audit_events.insert().values(
+                id=uuid.uuid4().hex, event_code="SPECULATIVE_EVENT", **base_values
+            )
+        )
+    with engine.begin() as connection:
+        connection.execute(audit_events.delete())
+    engine.dispose()
+
+    command.downgrade(config, "20260827_0008")
+    engine = create_engine(database_url)
+    audit_events = Table("audit_events", MetaData(), autoload_with=engine)
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            audit_events.insert().values(
+                id=uuid.uuid4().hex,
+                event_code="LOGOUT_SUCCEEDED",
+                action="REVOKE_SESSION",
+                **{key: value for key, value in base_values.items() if key != "action"},
+            )
+        )
     engine.dispose()

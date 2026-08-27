@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from aegis.api.dependencies import (
+    get_audit_service,
     get_db_session,
     get_intelligence_record_collection_read_service,
     get_intelligence_record_read_service,
@@ -39,6 +40,7 @@ from aegis.services.intelligence_records import (
     IntelligenceRecordReadResult,
 )
 from aegis.services.sessions import ResolvedSession, generate_session_token
+from aegis.services.sessions import RevokedSession
 
 
 LIMIT_BODY = {"detail": "Request temporarily unavailable"}
@@ -94,6 +96,13 @@ class Sessions:
         self.revoked.append(raw_token)
         return raw_token in self.resolved_by_token
 
+    def revoke_session_with_identity(self, raw_token: str | None):
+        self.revoked.append(raw_token)
+        resolved = self.resolved_by_token.get(raw_token or "")
+        if resolved is None:
+            return None
+        return RevokedSession(resolved.session_id, resolved.principal.user_id)
+
 
 class DatabaseTransaction:
     def __init__(self) -> None:
@@ -110,6 +119,11 @@ class DatabaseTransaction:
 class Challenges:
     def revoke(self, _raw_token: str | None) -> bool:
         return False
+
+
+class Audit:
+    def stage(self, _draft):
+        return None
 
 
 class CollectionService:
@@ -184,6 +198,7 @@ def application_with(
     configured = make_settings()
     application.state.availability_abuse_control = availability
     application.dependency_overrides[get_settings] = lambda: configured
+    application.dependency_overrides[get_audit_service] = lambda: Audit()
     if sessions is not None:
         application.dependency_overrides[get_session_service] = lambda: sessions
     return application, configured

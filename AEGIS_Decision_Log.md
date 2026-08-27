@@ -113,3 +113,8 @@
 | Persist audit evidence through a writer that adds and flushes but never commits. | Future mandatory evidence can join the same caller-owned transaction as its security state, preventing a second-transaction gap and preserving rollback ownership. |
 | Keep audit rows append-oriented through a new-row-only application API and no mutable lifecycle columns. | Normal code receives no update/delete/save boundary; PostgreSQL INSERT/authorized-SELECT without ordinary UPDATE/DELETE is the intended later deployment grant model. |
 | Reserve nullable opaque audit source-correlation fields without generating correlations in Part 1. | A later separately keyed and versioned privacy design can add stable correlation without persisting raw IP or reusing the Phase 5 process-local HMAC secret. |
+| Treat persistent typed audit as mandatory authentication evidence and retain the legacy logger as best-effort diagnostics. | Operational logging failure must not contradict transaction-coupled durable evidence or block a securely persisted result. |
+| Add only `MFA_CHALLENGE_ISSUED` and `LOGOUT_SUCCEEDED` in migration `20260827_0009`. | These are the only new Part 2 semantics; later codes are not preallocated. |
+| Stage authentication state and mandatory audit in one caller-owned transaction. | Security state and its evidence commit together or roll back together; repositories and services never commit. |
+| Represent replacement with `SESSION_REVOKED` plus `SESSION_ESTABLISHED` under one request ID. | The pair records the actual changes without a redundant replacement code. |
+| Emit `LOGOUT_SUCCEEDED` for completed idempotent logout and `SESSION_REVOKED` only for an actual revocation. | Completion is observable without falsely claiming absent server state changed. |

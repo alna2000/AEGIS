@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from aegis.api.dependencies import (
+    get_audit_service,
     get_authentication_audit_sink,
     get_db_session,
     get_mfa_challenge_service,
@@ -22,7 +23,7 @@ from aegis.api.dependencies import (
     get_session_service,
 )
 from aegis.core.config import Settings, get_settings
-from aegis.db.models import MfaChallenge, MfaCredential, User, UserSession
+from aegis.db.models import AuditEvent, MfaChallenge, MfaCredential, User, UserSession
 from aegis.db.repositories import (
     MfaChallengeRepository,
     MfaCredentialRepository,
@@ -35,6 +36,7 @@ from aegis.security.authentication_events import (
     AuthenticationRequestContext,
 )
 from aegis.security.passwords import PasswordService
+from aegis.security.security_events import SecurityEventCode
 from aegis.security.mfa_encryption import MfaSecretCipher
 from aegis.security.totp import TotpService
 from aegis.services.authentication import AuthenticatedPrincipal
@@ -58,6 +60,10 @@ GENERIC_MFA_FAILURE = {"detail": "MFA verification failed"}
 FIXED_NOW = datetime(2026, 8, 22, 12, 0, 5, tzinfo=timezone.utc)
 
 
+def durable_codes(db_session: Session) -> list[str]:
+    return list(db_session.scalars(select(AuditEvent.event_code).order_by(AuditEvent.occurred_at, AuditEvent.id)))
+
+
 class RecordingAuditSink:
     def __init__(self) -> None:
         self.events: list[AuthenticationAuditEvent] = []
@@ -71,12 +77,20 @@ class FailingAuditSink:
         raise RuntimeError("synthetic audit unavailable")
 
 
+class FailingDurableAudit:
+    def stage(self, _draft):
+        raise RuntimeError("synthetic durable audit unavailable")
+
+
 class FailingSessionService:
     def __init__(self, delegate: SessionService) -> None:
         self._delegate = delegate
 
     def revoke_session(self, raw_token: str | None) -> bool:
         return self._delegate.revoke_session(raw_token)
+
+    def revoke_session_with_identity(self, raw_token: str | None):
+        return self._delegate.revoke_session_with_identity(raw_token)
 
     def create_session(self, principal, context):
         raise RuntimeError("synthetic session persistence unavailable")
@@ -254,6 +268,10 @@ def test_login_sets_hash_only_strict_httponly_cookie_and_safe_json(
     # TestClient's synthetic host is not an IP address, so minimized context drops it.
     assert stored.source_ip is None
     assert stored.user_agent == "AEGIS-HTTP-Test/1.0"
+    assert durable_codes(db_session) == [
+        SecurityEventCode.PASSWORD_AUTH_SUCCEEDED.value,
+        SecurityEventCode.SESSION_ESTABLISHED.value,
+    ]
     assert len(sink.events) == 1
     assert (
         sink.events[0].event_type
@@ -433,6 +451,14 @@ def test_logout_revokes_server_state_clears_cookie_and_is_idempotent(
         assert client.get("/auth/me").status_code == 401
         assert client.post("/auth/logout").status_code == 204
 
+    assert durable_codes(db_session) == [
+        SecurityEventCode.PASSWORD_AUTH_SUCCEEDED.value,
+        SecurityEventCode.SESSION_ESTABLISHED.value,
+        SecurityEventCode.SESSION_REVOKED.value,
+        SecurityEventCode.LOGOUT_SUCCEEDED.value,
+        SecurityEventCode.LOGOUT_SUCCEEDED.value,
+    ]
+
 
 def test_login_does_not_promote_fixated_token_and_rotates_existing_session(
     db_session: Session,
@@ -526,7 +552,7 @@ def test_session_persistence_failure_rolls_back_password_rehash_and_returns_no_c
     )
 
 
-def test_required_audit_failure_blocks_http_login_and_session_creation(
+def test_legacy_audit_failure_does_not_block_http_login(
     db_session: Session,
 ) -> None:
     persist_user(db_session)
@@ -536,10 +562,27 @@ def test_required_audit_failure_blocks_http_login_and_session_creation(
     with TestClient(application) as client:
         response = login(client)
 
+    assert response.status_code == 200
+    assert settings.session_cookie_name in response.cookies
+    assert db_session.scalar(select(func.count()).select_from(UserSession)) == 1
+
+
+def test_durable_audit_failure_rolls_back_login_and_returns_no_cookie(
+    db_session: Session,
+) -> None:
+    persist_user(db_session)
+    db_session.commit()
+    application, settings, _ = configure_app(db_session)
+    application.dependency_overrides[get_audit_service] = lambda: FailingDurableAudit()
+
+    with TestClient(application) as client:
+        response = login(client)
+
     assert response.status_code == 503
     assert response.json() == {"detail": "Authentication service unavailable"}
     assert settings.session_cookie_name not in response.cookies
     assert db_session.scalar(select(func.count()).select_from(UserSession)) == 0
+    assert db_session.scalar(select(func.count()).select_from(AuditEvent)) == 0
 
 
 def test_mfa_password_success_creates_hash_only_challenge_but_no_session(
@@ -574,6 +617,10 @@ def test_mfa_password_success_creates_hash_only_challenge_but_no_session(
     assert stored.token_hash != raw_challenge
     assert raw_challenge not in tuple(str(value) for value in vars(stored).values())
     assert db_session.scalar(select(func.count()).select_from(UserSession)) == 0
+    assert durable_codes(db_session) == [
+        SecurityEventCode.PASSWORD_AUTH_SUCCEEDED.value,
+        SecurityEventCode.MFA_CHALLENGE_ISSUED.value,
+    ]
 
 
 def test_valid_challenge_and_totp_consume_challenge_and_issue_fresh_session(
@@ -608,6 +655,12 @@ def test_valid_challenge_and_totp_consume_challenge_and_issue_fresh_session(
     assert stored_session.token_hash == hash_session_token(raw_session)
     assert identity.status_code == 200
     assert identity.json()["username"] == user.username
+    assert durable_codes(db_session) == [
+        SecurityEventCode.PASSWORD_AUTH_SUCCEEDED.value,
+        SecurityEventCode.MFA_CHALLENGE_ISSUED.value,
+        SecurityEventCode.MFA_FACTOR_SUCCEEDED.value,
+        SecurityEventCode.SESSION_ESTABLISHED.value,
+    ]
     assert [event.event_type for event in sink.events] == [
         AuthenticationEventType.PASSWORD_AUTH_SUCCESS,
         AuthenticationEventType.TOTP_VERIFICATION_SUCCESS,

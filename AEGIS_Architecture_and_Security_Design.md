@@ -1346,3 +1346,21 @@ deployment responsibility and are not claimed as locally enforced. Current
 authentication/TOTP logging is unchanged and remains non-persistent. Event
 producer integration, query authorization/API/UI, detections, retention jobs,
 SIEM export, and Phase 7 controls are not implemented in Part 1.
+
+## Phase 6 Part 2 authentication audit integration
+
+Authentication routes use an audit service over the same SQLAlchemy session as
+authentication state, and the route owns the sole commit. Mandatory evidence and
+password failures, challenge/session creation, MFA counters and consumption, and
+logout revocation therefore commit or roll back together.
+
+Challenge creation emits `MFA_CHALLENGE_ISSUED`; direct login emits
+`SESSION_ESTABLISHED`; replacement emits `SESSION_REVOKED` and
+`SESSION_ESTABLISHED` under one request ID. `SESSION_REVOKED` is emitted only for
+an actual known-session change. Every completed logout emits
+`LOGOUT_SUCCEEDED`, including idempotent no-session recovery.
+
+Only controlled values, internal UUIDs, and request IDs cross the durable audit
+boundary. Raw credentials, TOTP material, tokens, cookies, usernames, IP/user
+agent, request bodies, and classified content do not. Generic HTTP errors,
+cookie timing, and controlled logout recovery behavior remain unchanged.

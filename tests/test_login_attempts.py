@@ -15,7 +15,6 @@ from aegis.db.repositories import UserRepository
 from aegis.security.audit_sinks import LoggingAuthenticationAuditSink
 from aegis.security.authentication_events import (
     MAX_USER_AGENT_CHARACTERS,
-    AuthenticationAuditError,
     AuthenticationAuditEvent,
     AuthenticationEventType,
     AuthenticationOutcome,
@@ -338,7 +337,7 @@ def test_missing_or_malformed_optional_metadata_does_not_control_success(
     assert sink.events[1].event_type is AuthenticationEventType.PASSWORD_AUTH_FAILURE
 
 
-def test_audit_failure_prevents_success_and_leaves_rehash_unchanged(
+def test_legacy_audit_failure_does_not_block_success_or_rehash(
     db_session: Session,
 ) -> None:
     legacy_hasher = PasswordHasher(
@@ -353,23 +352,24 @@ def test_audit_failure_prevents_success_and_leaves_rehash_unchanged(
     user = persist_user(users, legacy_hasher.hash(SYNTHETIC_PASSWORD))
     original_hash = user.password_hash
 
-    with pytest.raises(AuthenticationAuditError):
-        service.attempt_login(
-            "synthetic.operator", SYNTHETIC_PASSWORD, make_context()
-        )
+    result = service.attempt_login(
+        "synthetic.operator", SYNTHETIC_PASSWORD, make_context()
+    )
 
-    assert user.password_hash == original_hash
+    assert result.status is LoginAttemptStatus.SUCCESS
+    assert user.password_hash != original_hash
 
 
-def test_audit_failure_does_not_return_normal_failure_result(
+def test_legacy_audit_failure_returns_normal_failure_result(
     db_session: Session,
 ) -> None:
     _, service, _ = build_service(db_session, audit_sink=FailingAuditSink())
 
-    with pytest.raises(AuthenticationAuditError):
-        service.attempt_login(
-            "synthetic.missing", SYNTHETIC_PASSWORD, make_context()
-        )
+    result = service.attempt_login(
+        "synthetic.missing", SYNTHETIC_PASSWORD, make_context()
+    )
+
+    assert result == LoginAttemptResult.failure()
 
 
 def test_successful_audited_login_upgrades_outdated_hash(

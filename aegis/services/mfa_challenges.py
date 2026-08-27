@@ -30,6 +30,7 @@ class MfaChallengeServiceError(RuntimeError):
 class IssuedMfaChallenge:
     """One raw challenge credential returned only to the cookie boundary."""
 
+    challenge_id: uuid.UUID
     raw_token: str = field(repr=False)
     expires_at: datetime
 
@@ -108,7 +109,7 @@ class MfaChallengeService:
             existing.revoked_at = max(now, self._as_utc(existing.created_at))
 
         expires_at = now + self._lifetime
-        self._challenges.add(
+        model = self._challenges.add(
             MfaChallenge(
                 user_id=principal.user_id,
                 token_hash=token_hash,
@@ -119,7 +120,11 @@ class MfaChallengeService:
             )
         )
         self._challenges.flush()
-        return IssuedMfaChallenge(raw_token=raw_token, expires_at=expires_at)
+        return IssuedMfaChallenge(
+            challenge_id=model.id,
+            raw_token=raw_token,
+            expires_at=expires_at,
+        )
 
     def resolve_challenge(
         self, raw_token: str | None

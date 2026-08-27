@@ -29,8 +29,10 @@ class SecurityEventCode(str, Enum):
     MFA_FACTOR_SUCCEEDED = "MFA_FACTOR_SUCCEEDED"
     MFA_FACTOR_FAILED = "MFA_FACTOR_FAILED"
     MFA_CHALLENGE_EXHAUSTED = "MFA_CHALLENGE_EXHAUSTED"
+    MFA_CHALLENGE_ISSUED = "MFA_CHALLENGE_ISSUED"
     SESSION_ESTABLISHED = "SESSION_ESTABLISHED"
     SESSION_REVOKED = "SESSION_REVOKED"
+    LOGOUT_SUCCEEDED = "LOGOUT_SUCCEEDED"
     AUTHORIZATION_ALLOWED = "AUTHORIZATION_ALLOWED"
     AUTHORIZATION_DENIED = "AUTHORIZATION_DENIED"
     AUTHORIZATION_ERROR = "AUTHORIZATION_ERROR"
@@ -121,8 +123,10 @@ _EVENT_DEFINITIONS: Mapping[SecurityEventCode, _EventDefinition] = MappingProxyT
         SecurityEventCode.MFA_FACTOR_SUCCEEDED: _EventDefinition(SecurityEventFamily.MFA, SecurityEventOutcome.SUCCESS, SecurityEventSeverity.INFORMATIONAL, SecurityEventAction.VERIFY_MFA, False),
         SecurityEventCode.MFA_FACTOR_FAILED: _EventDefinition(SecurityEventFamily.MFA, SecurityEventOutcome.FAILURE, SecurityEventSeverity.MEDIUM, SecurityEventAction.VERIFY_MFA, True),
         SecurityEventCode.MFA_CHALLENGE_EXHAUSTED: _EventDefinition(SecurityEventFamily.MFA, SecurityEventOutcome.DENY, SecurityEventSeverity.HIGH, SecurityEventAction.VERIFY_MFA, True),
+        SecurityEventCode.MFA_CHALLENGE_ISSUED: _EventDefinition(SecurityEventFamily.MFA, SecurityEventOutcome.SUCCESS, SecurityEventSeverity.INFORMATIONAL, SecurityEventAction.VERIFY_MFA, False),
         SecurityEventCode.SESSION_ESTABLISHED: _EventDefinition(SecurityEventFamily.SESSION, SecurityEventOutcome.SUCCESS, SecurityEventSeverity.INFORMATIONAL, SecurityEventAction.ESTABLISH_SESSION, False),
         SecurityEventCode.SESSION_REVOKED: _EventDefinition(SecurityEventFamily.SESSION, SecurityEventOutcome.SUCCESS, SecurityEventSeverity.INFORMATIONAL, SecurityEventAction.REVOKE_SESSION, False),
+        SecurityEventCode.LOGOUT_SUCCEEDED: _EventDefinition(SecurityEventFamily.SESSION, SecurityEventOutcome.SUCCESS, SecurityEventSeverity.INFORMATIONAL, SecurityEventAction.REVOKE_SESSION, False),
         SecurityEventCode.AUTHORIZATION_ALLOWED: _EventDefinition(SecurityEventFamily.AUTHORIZATION, SecurityEventOutcome.ALLOW, SecurityEventSeverity.INFORMATIONAL, SecurityEventAction.AUTHORIZE, False),
         SecurityEventCode.AUTHORIZATION_DENIED: _EventDefinition(SecurityEventFamily.AUTHORIZATION, SecurityEventOutcome.DENY, SecurityEventSeverity.LOW, SecurityEventAction.AUTHORIZE, True),
         SecurityEventCode.AUTHORIZATION_ERROR: _EventDefinition(SecurityEventFamily.AUTHORIZATION, SecurityEventOutcome.ERROR, SecurityEventSeverity.HIGH, SecurityEventAction.AUTHORIZE, True),

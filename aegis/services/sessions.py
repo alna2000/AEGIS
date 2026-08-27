@@ -30,6 +30,7 @@ class SessionServiceError(RuntimeError):
 class IssuedSession:
     """One newly issued client credential and its non-secret lifecycle data."""
 
+    session_id: uuid.UUID
     raw_token: str = field(repr=False)
     expires_at: datetime
 
@@ -40,6 +41,14 @@ class ResolvedSession:
 
     session_id: uuid.UUID
     principal: AuthenticatedPrincipal
+
+
+@dataclass(frozen=True, slots=True)
+class RevokedSession:
+    """Internal identity of one session actually revoked by this transaction."""
+
+    session_id: uuid.UUID
+    user_id: uuid.UUID
 
 
 def generate_session_token() -> str:
@@ -90,7 +99,7 @@ class SessionService:
             raise SessionServiceError("secure session token generation failed")
 
         expires_at = now + self._lifetime
-        self._sessions.add(
+        model = self._sessions.add(
             UserSession(
                 user_id=principal.user_id,
                 token_hash=token_hash,
@@ -101,7 +110,11 @@ class SessionService:
             )
         )
         self._sessions.flush()
-        return IssuedSession(raw_token=raw_token, expires_at=expires_at)
+        return IssuedSession(
+            session_id=model.id,
+            raw_token=raw_token,
+            expires_at=expires_at,
+        )
 
     def resolve_session(self, raw_token: str | None) -> ResolvedSession | None:
         """Resolve a presented token only when session and account remain usable."""
@@ -125,17 +138,27 @@ class SessionService:
     def revoke_session(self, raw_token: str | None) -> bool:
         """Revoke a known presented session; missing and invalid tokens are harmless."""
 
+        return self.revoke_session_with_identity(raw_token) is not None
+
+    def revoke_session_with_identity(
+        self, raw_token: str | None
+    ) -> RevokedSession | None:
+        """Revoke and return internal identity only when state actually changes."""
+
         token_hash = hash_session_token(raw_token)
         if token_hash is None:
-            return False
+            return None
         user_session = self._sessions.get_by_token_hash(token_hash)
         if user_session is None or user_session.revoked_at is not None:
-            return False
+            return None
         now = self._current_time()
         created_at = self._as_utc(user_session.created_at)
         user_session.revoked_at = max(now, created_at)
         self._sessions.flush()
-        return True
+        return RevokedSession(
+            session_id=user_session.id,
+            user_id=user_session.user_id,
+        )
 
     def _is_usable(self, user_session: UserSession) -> bool:
         try:

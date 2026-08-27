@@ -16,6 +16,7 @@ from aegis.db.repositories import (
     UserRepository,
 )
 from aegis.db.authorization_repositories import AuthorizationSubjectRepository
+from aegis.db.audit_repositories import AuditEventWriterRepository
 from aegis.db.intelligence_record_repositories import (
     IntelligenceRecordContentRepository,
     IntelligenceRecordPolicyRepository,
@@ -29,6 +30,7 @@ from aegis.security.passwords import PasswordService
 from aegis.security.mfa_encryption import MfaKeyConfigurationError, MfaSecretCipher
 from aegis.security.totp import TotpService
 from aegis.services.authentication import AuthenticatedPrincipal, AuthenticationService
+from aegis.services.audit import AuditService
 from aegis.services.mfa import MfaService
 from aegis.services.mfa_challenges import MfaChallengeService
 from aegis.services.sessions import SessionService
@@ -65,6 +67,14 @@ def get_authentication_audit_sink() -> AuthenticationAuditSink:
     """Return the current non-persistent controlled authentication audit sink."""
 
     return LoggingAuthenticationAuditSink()
+
+
+def get_audit_service(
+    database_session: Annotated[Session, Depends(get_db_session)],
+) -> AuditService:
+    """Return the durable writer in the request's caller-owned transaction."""
+
+    return AuditService(AuditEventWriterRepository(database_session))
 
 
 def get_authentication_abuse_control(request: Request) -> AuthenticationAbuseControl:

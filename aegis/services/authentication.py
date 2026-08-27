@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from aegis.db.repositories import UserRepository
 from aegis.security.authentication_events import (
-    AuthenticationAuditError,
     AuthenticationAuditEvent,
     AuthenticationAuditSink,
     AuthenticationEventType,
@@ -50,18 +49,39 @@ class LoginAttemptResult:
 
     status: LoginAttemptStatus
     principal: AuthenticatedPrincipal | None = None
+    audit_user_id: uuid.UUID | None = field(default=None, compare=False, repr=False)
+    audit_reason_code: AuthenticationReasonCode | None = field(
+        default=None, compare=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         if (self.status is LoginAttemptStatus.SUCCESS) != (self.principal is not None):
             raise ValueError("only a successful login result may contain a principal")
+        if self.status is LoginAttemptStatus.SUCCESS:
+            if self.audit_reason_code is not None:
+                raise ValueError("successful login result cannot contain a failure reason")
+        elif not isinstance(self.audit_reason_code, AuthenticationReasonCode):
+            # Compatibility construction remains useful in older service tests;
+            # real service failures always supply their controlled reason below.
+            if self.audit_reason_code is not None:
+                raise TypeError("login audit reason must be controlled")
 
     @classmethod
     def success(cls, principal: AuthenticatedPrincipal) -> LoginAttemptResult:
         return cls(status=LoginAttemptStatus.SUCCESS, principal=principal)
 
     @classmethod
-    def failure(cls) -> LoginAttemptResult:
-        return cls(status=LoginAttemptStatus.FAILURE)
+    def failure(
+        cls,
+        *,
+        user_id: uuid.UUID | None = None,
+        reason_code: AuthenticationReasonCode | None = None,
+    ) -> LoginAttemptResult:
+        return cls(
+            status=LoginAttemptStatus.FAILURE,
+            audit_user_id=user_id,
+            audit_reason_code=reason_code,
+        )
 
 
 class AuthenticationService:
@@ -94,7 +114,7 @@ class AuthenticationService:
                 else AuthenticationReasonCode.CREDENTIALS_REJECTED
             )
             self._record_credential_failure(context=context, reason_code=reason)
-            return LoginAttemptResult.failure()
+            return LoginAttemptResult.failure(reason_code=reason)
 
         if not user.is_usable_for_authentication:
             self._perform_dummy_verification(password)
@@ -104,7 +124,10 @@ class AuthenticationService:
                 user_id=user.id,
                 username=user.username,
             )
-            return LoginAttemptResult.failure()
+            return LoginAttemptResult.failure(
+                user_id=user.id,
+                reason_code=AuthenticationReasonCode.ACCOUNT_UNUSABLE,
+            )
 
         verification = self._passwords.verify_and_update(password, user.password_hash)
         if not verification.valid:
@@ -114,7 +137,10 @@ class AuthenticationService:
                 user_id=user.id,
                 username=user.username,
             )
-            return LoginAttemptResult.failure()
+            return LoginAttemptResult.failure(
+                user_id=user.id,
+                reason_code=AuthenticationReasonCode.CREDENTIALS_REJECTED,
+            )
 
         principal = AuthenticatedPrincipal(
             user_id=user.id,
@@ -175,12 +201,14 @@ class AuthenticationService:
         )
 
     def _record(self, event: AuthenticationAuditEvent) -> None:
+        """Retain secret-free operational diagnostics without audit semantics."""
+
         try:
             self._audit_sink.record(event)
-        except Exception as exc:
-            raise AuthenticationAuditError(
-                "required credential audit emission failed"
-            ) from exc
+        except Exception:
+            # Durable evidence is staged separately in the caller-owned database
+            # transaction. A secondary logger failure cannot contradict it.
+            return
 
     @staticmethod
     def _is_malformed_identifier(username: str) -> bool:

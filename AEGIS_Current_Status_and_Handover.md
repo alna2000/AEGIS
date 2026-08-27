@@ -602,3 +602,20 @@ ordinary UPDATE or DELETE. Deployment owns actual production grants.
 No existing authentication logger or event producer is integrated yet. No audit
 query API, UI, detection, SIEM export, Phase 7 work, or `/health` dependency was
 added. Those remain later reviewed Phase 6 parts.
+
+## Phase 6 Part 2 local implementation status
+
+Part 1 is checkpointed at `6f5448b36903fb1ff8f03d0dca9e7bc271c33175`.
+Part 2 is implemented locally and pending review; it has not been committed or
+pushed. Migration `20260827_0009` extends only the controlled audit event-code
+constraint with `MFA_CHALLENGE_ISSUED` and `LOGOUT_SUCCEEDED`.
+
+Password, MFA challenge/factor, session establishment/revocation, and logout
+evidence is staged through the persistent audit service in the same caller-owned
+transaction as related state. Session replacement is `SESSION_REVOKED` plus
+`SESSION_ESTABLISHED` with one request ID; there is no `SESSION_REPLACED` code.
+The older operational authentication logger remains best-effort diagnostics.
+
+No audit query API/UI, authorization or record integration, detection, SIEM,
+source-correlation generation, or Phase 7 work is included. `/health` remains
+independent of audit persistence.

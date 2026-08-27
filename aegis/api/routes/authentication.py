@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from aegis.api.dependencies import (
     build_mfa_service,
+    get_audit_service,
     get_authentication_abuse_control,
     get_authentication_audit_sink,
     get_authentication_service,
@@ -26,8 +27,20 @@ from aegis.security.authentication_events import (
 from aegis.security.abuse import AbuseDecision, AbuseDecisionStatus
 from aegis.security.authentication_abuse import AuthenticationAbuseControl
 from aegis.security.availability_abuse import AvailabilityAbuseControl
-from aegis.services.authentication import AuthenticationService, LoginAttemptStatus
-from aegis.services.mfa import MfaService, MfaVerificationStatus
+from aegis.security.security_events import (
+    SecurityActorType,
+    SecurityEventCode,
+    SecurityEventDraft,
+    SecurityEventReason,
+    SecurityTargetType,
+)
+from aegis.services.audit import AuditService
+from aegis.services.authentication import (
+    AuthenticationService,
+    LoginAttemptResult,
+    LoginAttemptStatus,
+)
+from aegis.services.mfa import MfaService, MfaVerificationResult, MfaVerificationStatus
 from aegis.services.mfa_challenges import MfaChallengeService
 from aegis.services.sessions import SessionService
 
@@ -113,6 +126,7 @@ def login(
     abuse: Annotated[
         AuthenticationAbuseControl, Depends(get_authentication_abuse_control)
     ],
+    audit: Annotated[AuditService, Depends(get_audit_service)],
 ) -> LoginResponse:
     """Authenticate a password, then issue a session or an MFA challenge."""
 
@@ -129,8 +143,9 @@ def login(
                 credentials.password,
                 context,
             )
+            _stage_password_event(audit, result, context.request_id)
             if result.status is LoginAttemptStatus.FAILURE:
-                database_session.rollback()
+                database_session.commit()
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail=_GENERIC_LOGIN_FAILURE,
@@ -143,6 +158,16 @@ def login(
                 # challenge that could otherwise never be completed.
                 build_mfa_service(database_session, settings, audit_sink)
                 issued_challenge = challenges.create_challenge(result.principal, context)
+                audit.stage(
+                    SecurityEventDraft(
+                        event_code=SecurityEventCode.MFA_CHALLENGE_ISSUED,
+                        actor_type=SecurityActorType.USER,
+                        actor_user_id=result.principal.user_id,
+                        request_id=context.request_id,
+                        target_type=SecurityTargetType.MFA_CHALLENGE,
+                        target_id=issued_challenge.challenge_id,
+                    )
+                )
                 database_session.commit()
                 response.set_cookie(
                     key=settings.mfa_challenge_cookie_name,
@@ -159,8 +184,23 @@ def login(
             challenges.revoke(
                 request.cookies.get(settings.mfa_challenge_cookie_name)
             )
-            sessions.revoke_session(request.cookies.get(settings.session_cookie_name))
+            revoked = sessions.revoke_session_with_identity(
+                request.cookies.get(settings.session_cookie_name)
+            )
             issued = sessions.create_session(result.principal, context)
+            if revoked is not None:
+                _stage_session_revoked(
+                    audit,
+                    request_id=context.request_id,
+                    actor_user_id=result.principal.user_id,
+                    session_id=revoked.session_id,
+                )
+            _stage_session_established(
+                audit,
+                request_id=context.request_id,
+                actor_user_id=result.principal.user_id,
+                session_id=issued.session_id,
+            )
             database_session.commit()
     except HTTPException:
         raise
@@ -206,6 +246,7 @@ def verify_totp(
     abuse: Annotated[
         AuthenticationAbuseControl, Depends(get_authentication_abuse_control)
     ],
+    audit: Annotated[AuditService, Depends(get_audit_service)],
 ) -> LoginResponse:
     """Complete a password-verified MFA challenge and issue a fresh session."""
 
@@ -220,15 +261,22 @@ def verify_totp(
     try:
         with acquisition.lease:
             resolved = challenges.resolve_challenge(raw_challenge_token)
-            verification_status = (
-                mfa.verify_result(resolved.principal, verification.code, context)
+            verification_result = (
+                mfa.verify_detailed_result(
+                    resolved.principal, verification.code, context
+                )
                 if resolved is not None
                 else None
             )
-            if verification_status is not MfaVerificationStatus.SUCCESS:
+            if (
+                verification_result is None
+                or verification_result.status is not MfaVerificationStatus.SUCCESS
+            ):
                 if (
                     resolved is not None
-                    and verification_status is MfaVerificationStatus.FACTOR_FAILURE
+                    and verification_result is not None
+                    and verification_result.status
+                    is MfaVerificationStatus.FACTOR_FAILURE
                 ):
                     failure_count = challenges.record_factor_failure(
                         resolved,
@@ -241,6 +289,32 @@ def verify_totp(
                         if cooldown.status is AbuseDecisionStatus.UNAVAILABLE:
                             database_session.rollback()
                             _enforce_abuse_decision(cooldown)
+                    _stage_mfa_factor_event(
+                        audit,
+                        resolved,
+                        verification_result,
+                        context.request_id,
+                    )
+                    if failure_count == abuse.policy.mfa_max_factor_failures:
+                        audit.stage(
+                            SecurityEventDraft(
+                                event_code=SecurityEventCode.MFA_CHALLENGE_EXHAUSTED,
+                                actor_type=SecurityActorType.USER,
+                                actor_user_id=resolved.principal.user_id,
+                                request_id=context.request_id,
+                                target_type=SecurityTargetType.MFA_CHALLENGE,
+                                target_id=resolved.challenge_id,
+                                reason_code=SecurityEventReason.CHALLENGE_FAILURE_LIMIT,
+                            )
+                        )
+                    database_session.commit()
+                elif resolved is not None and verification_result is not None:
+                    _stage_mfa_factor_event(
+                        audit,
+                        resolved,
+                        verification_result,
+                        context.request_id,
+                    )
                     database_session.commit()
                 else:
                     database_session.rollback()
@@ -249,9 +323,30 @@ def verify_totp(
                     detail=_GENERIC_MFA_FAILURE,
                 )
 
+            _stage_mfa_factor_event(
+                audit,
+                resolved,
+                verification_result,
+                context.request_id,
+            )
             challenges.consume(resolved)
-            sessions.revoke_session(request.cookies.get(settings.session_cookie_name))
+            revoked = sessions.revoke_session_with_identity(
+                request.cookies.get(settings.session_cookie_name)
+            )
             issued = sessions.create_session(resolved.principal, context)
+            if revoked is not None:
+                _stage_session_revoked(
+                    audit,
+                    request_id=context.request_id,
+                    actor_user_id=resolved.principal.user_id,
+                    session_id=revoked.session_id,
+                )
+            _stage_session_established(
+                audit,
+                request_id=context.request_id,
+                actor_user_id=resolved.principal.user_id,
+                session_id=issued.session_id,
+            )
             database_session.commit()
     except HTTPException:
         raise
@@ -318,18 +413,45 @@ def logout(
     availability: Annotated[
         AvailabilityAbuseControl, Depends(get_availability_abuse_control)
     ],
+    audit: Annotated[AuditService, Depends(get_audit_service)],
 ) -> None:
     """Revoke a presented server-side session and remove its client cookie."""
 
-    decision = availability.admit_logout(_request_context(request))
+    context = _request_context(request)
+    decision = availability.admit_logout(context)
     if decision.status is AbuseDecisionStatus.LIMITED:
         _enforce_availability_decision(decision)
     # Logout is a recovery operation and fails open only for controlled abuse
     # store unavailability; database revocation failures still return 503.
     try:
-        sessions.revoke_session(request.cookies.get(settings.session_cookie_name))
+        revoked = sessions.revoke_session_with_identity(
+            request.cookies.get(settings.session_cookie_name)
+        )
         challenges.revoke(
             request.cookies.get(settings.mfa_challenge_cookie_name)
+        )
+        if revoked is not None:
+            _stage_session_revoked(
+                audit,
+                request_id=context.request_id,
+                actor_user_id=revoked.user_id,
+                session_id=revoked.session_id,
+            )
+        audit.stage(
+            SecurityEventDraft(
+                event_code=SecurityEventCode.LOGOUT_SUCCEEDED,
+                actor_type=(
+                    SecurityActorType.USER
+                    if revoked is not None
+                    else SecurityActorType.ANONYMOUS
+                ),
+                actor_user_id=(revoked.user_id if revoked is not None else None),
+                request_id=context.request_id,
+                target_type=(
+                    SecurityTargetType.SESSION if revoked is not None else None
+                ),
+                target_id=(revoked.session_id if revoked is not None else None),
+            )
         )
         database_session.commit()
     except Exception:
@@ -392,3 +514,98 @@ def _resolve_session(
             detail="Authentication required",
         )
     return resolved
+
+
+def _stage_password_event(
+    audit: AuditService,
+    result: LoginAttemptResult,
+    request_id: uuid.UUID,
+) -> None:
+    if result.status is LoginAttemptStatus.SUCCESS:
+        if result.principal is None:
+            raise RuntimeError("successful password audit lacked identity")
+        audit.stage(
+            SecurityEventDraft(
+                event_code=SecurityEventCode.PASSWORD_AUTH_SUCCEEDED,
+                actor_type=SecurityActorType.USER,
+                actor_user_id=result.principal.user_id,
+                request_id=request_id,
+            )
+        )
+        return
+    if result.audit_reason_code is None:
+        raise RuntimeError("failed password audit lacked a controlled reason")
+    audit.stage(
+        SecurityEventDraft(
+            event_code=SecurityEventCode.PASSWORD_AUTH_FAILED,
+            actor_type=SecurityActorType.ANONYMOUS,
+            subject_user_id=result.audit_user_id,
+            request_id=request_id,
+            reason_code=SecurityEventReason(result.audit_reason_code.value),
+        )
+    )
+
+
+def _stage_mfa_factor_event(
+    audit: AuditService,
+    resolved,
+    result: MfaVerificationResult,
+    request_id: uuid.UUID,
+) -> None:
+    audit.stage(
+        SecurityEventDraft(
+            event_code=(
+                SecurityEventCode.MFA_FACTOR_SUCCEEDED
+                if result.status is MfaVerificationStatus.SUCCESS
+                else SecurityEventCode.MFA_FACTOR_FAILED
+            ),
+            actor_type=SecurityActorType.USER,
+            actor_user_id=resolved.principal.user_id,
+            request_id=request_id,
+            target_type=SecurityTargetType.MFA_CHALLENGE,
+            target_id=resolved.challenge_id,
+            reason_code=(
+                SecurityEventReason(result.reason_code.value)
+                if result.reason_code is not None
+                else None
+            ),
+        )
+    )
+
+
+def _stage_session_revoked(
+    audit: AuditService,
+    *,
+    request_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+    session_id: uuid.UUID,
+) -> None:
+    audit.stage(
+        SecurityEventDraft(
+            event_code=SecurityEventCode.SESSION_REVOKED,
+            actor_type=SecurityActorType.USER,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            target_type=SecurityTargetType.SESSION,
+            target_id=session_id,
+        )
+    )
+
+
+def _stage_session_established(
+    audit: AuditService,
+    *,
+    request_id: uuid.UUID,
+    actor_user_id: uuid.UUID,
+    session_id: uuid.UUID,
+) -> None:
+    audit.stage(
+        SecurityEventDraft(
+            event_code=SecurityEventCode.SESSION_ESTABLISHED,
+            actor_type=SecurityActorType.USER,
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            target_type=SecurityTargetType.SESSION,
+            target_id=session_id,
+        )
+    )

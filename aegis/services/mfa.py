@@ -11,7 +11,6 @@ from enum import Enum
 from aegis.db.models import MfaCredential
 from aegis.db.repositories import MfaCredentialRepository
 from aegis.security.authentication_events import (
-    AuthenticationAuditError,
     AuthenticationAuditEvent,
     AuthenticationAuditSink,
     AuthenticationEventType,
@@ -34,6 +33,21 @@ class MfaVerificationStatus(str, Enum):
     SUCCESS = "SUCCESS"
     FACTOR_FAILURE = "FACTOR_FAILURE"
     CREDENTIAL_UNUSABLE = "CREDENTIAL_UNUSABLE"
+
+
+@dataclass(frozen=True, slots=True)
+class MfaVerificationResult:
+    """Controlled factor result with its durable internal reason when rejected."""
+
+    status: MfaVerificationStatus
+    reason_code: AuthenticationReasonCode | None
+
+    def __post_init__(self) -> None:
+        if self.status is MfaVerificationStatus.SUCCESS:
+            if self.reason_code is not None:
+                raise ValueError("successful MFA result cannot contain a reason")
+        elif not isinstance(self.reason_code, AuthenticationReasonCode):
+            raise ValueError("rejected MFA result requires a controlled reason")
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +144,16 @@ class MfaService:
     ) -> MfaVerificationStatus:
         """Verify TOTP while distinguishing factor failures from unusable state."""
 
+        return self.verify_detailed_result(principal, code, context).status
+
+    def verify_detailed_result(
+        self,
+        principal: AuthenticatedPrincipal,
+        code: object,
+        context: AuthenticationRequestContext,
+    ) -> MfaVerificationResult:
+        """Return the controlled internal reason needed for durable evidence."""
+
         credential = self._credentials.get_current_totp(
             principal.user_id, for_update=True
         )
@@ -137,7 +161,10 @@ class MfaService:
             self._record_failure(
                 principal, context, AuthenticationReasonCode.MFA_CREDENTIAL_UNUSABLE
             )
-            return MfaVerificationStatus.CREDENTIAL_UNUSABLE
+            return MfaVerificationResult(
+                MfaVerificationStatus.CREDENTIAL_UNUSABLE,
+                AuthenticationReasonCode.MFA_CREDENTIAL_UNUSABLE,
+            )
         return self._verify_code_result(credential, principal, code, context)
 
     def _verify_code_result(
@@ -146,7 +173,7 @@ class MfaService:
         principal: AuthenticatedPrincipal,
         code: object,
         context: AuthenticationRequestContext,
-    ) -> MfaVerificationStatus:
+    ) -> MfaVerificationResult:
         try:
             secret = self._cipher.decrypt(
                 credential.encrypted_secret, credential.encryption_key_id
@@ -155,7 +182,10 @@ class MfaService:
             self._record_failure(
                 principal, context, AuthenticationReasonCode.MFA_CREDENTIAL_UNUSABLE
             )
-            return MfaVerificationStatus.CREDENTIAL_UNUSABLE
+            return MfaVerificationResult(
+                MfaVerificationStatus.CREDENTIAL_UNUSABLE,
+                AuthenticationReasonCode.MFA_CREDENTIAL_UNUSABLE,
+            )
 
         now = self._current_time()
         try:
@@ -166,7 +196,10 @@ class MfaService:
             self._record_failure(
                 principal, context, AuthenticationReasonCode.TOTP_REJECTED
             )
-            return MfaVerificationStatus.FACTOR_FAILURE
+            return MfaVerificationResult(
+                MfaVerificationStatus.FACTOR_FAILURE,
+                AuthenticationReasonCode.TOTP_REJECTED,
+            )
         if (
             credential.last_accepted_counter is not None
             and counter <= credential.last_accepted_counter
@@ -174,13 +207,16 @@ class MfaService:
             self._record_failure(
                 principal, context, AuthenticationReasonCode.TOTP_REPLAYED
             )
-            return MfaVerificationStatus.FACTOR_FAILURE
+            return MfaVerificationResult(
+                MfaVerificationStatus.FACTOR_FAILURE,
+                AuthenticationReasonCode.TOTP_REPLAYED,
+            )
 
         self._record_success(principal, context)
         credential.last_accepted_counter = counter
         credential.last_used_at = max(now, self._as_utc(credential.created_at))
         self._credentials.flush()
-        return MfaVerificationStatus.SUCCESS
+        return MfaVerificationResult(MfaVerificationStatus.SUCCESS, None)
 
     def disable(self, principal: AuthenticatedPrincipal) -> bool:
         """Disable, but do not delete, the current TOTP credential."""
@@ -281,12 +317,12 @@ class MfaService:
         )
 
     def _record(self, event: AuthenticationAuditEvent) -> None:
+        """Retain best-effort operational logging separate from durable audit."""
+
         try:
             self._audit_sink.record(event)
-        except Exception as exc:
-            raise AuthenticationAuditError(
-                "required credential audit emission failed"
-            ) from exc
+        except Exception:
+            return
 
     def _current_time(self) -> datetime:
         return self._as_utc(self._clock())
