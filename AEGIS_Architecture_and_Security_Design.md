@@ -17,7 +17,9 @@ intelligence, classifications, compartments, and events only.
 Phase 3 now implements the authorization and classified-record read subset
 described in the implementation-status sections at the end of this document.
 Phase 5 now implements the bounded local abuse-protection architecture documented
-in the final implementation-status section. Earlier design-status blocks are
+in its implementation-status section. Phase 6 now implements the durable audit,
+authorized visibility, and deterministic detection architecture documented in
+the final implementation-status sections. Earlier design-status blocks are
 historical context and do not override later verified implementation sections.
 Design statements outside those sections remain future requirements unless they
 are explicitly identified as implemented and tested.
@@ -1203,7 +1205,9 @@ Phase 2: COMPLETE
 Phase 3: COMPLETE
 Phase 4: COMPLETE
 Phase 5: COMPLETE
-Phase 6: NOT STARTED
+Phase 6: COMPLETE
+Phase 7: NOT STARTED / DEFERRED
+Phase 8: NOT STARTED / DEFERRED
 ```
 
 The implemented HTTP boundary is read-only: `GET /records` and
@@ -1448,3 +1452,33 @@ generic 503 and no partial findings. Querying remains read-only: it adds neither
 persistence nor audit-query evidence and performs no enforcement. Detection UI,
 persistent findings, exercise execution, SIEM, and automatic enforcement remain
 outside Part 4B.
+
+## Phase 6 closure status
+
+Phase 6 is complete at Alembic head `20260827_0010`. The audit architecture uses
+a controlled typed vocabulary, an append-oriented new-row-only writer, and
+caller-owned transactions so mandatory evidence and security state commit or
+roll back together. It structurally excludes unrestricted metadata and sensitive
+authentication, network, policy, and classified-content fields.
+
+Security Auditor visibility uses current session resolution, authoritative
+subject reload, and central `AUDIT` authorization on `AUDIT_EVENT`. Audit queries
+and `GET /audit/detections` are bounded, read-only, and privacy-minimized;
+System Administrator and Analyst receive no implicit access. Nine deterministic
+detectors derive immutable review signals in memory with a 24-hour lookback,
+5,000-row completeness bound, 500-finding output cap, and at most 25 supporting
+event UUIDs. Findings are neither persisted nor enforcement decisions.
+
+The structured synthetic exercise verified password/MFA/session flows,
+authorization and hidden-404 behavior, audit evidence, expected findings,
+query-role separation, privacy boundaries, logout, and independent health.
+Unsafe or timing-sensitive cases remained covered by deterministic tests. The
+configured local PostgreSQL application/runtime role could not read
+`alembic_version`; the live development database was not modified and isolated
+real-flow SQLite persistence was used instead. This is a local setup/privilege
+workflow limitation, not a Phase 6 application defect.
+
+Production/public deployment, Phases 7 and 8, Wazuh/SIEM, shared/distributed rate
+limiting, proxy trust and deployment hardening, audit-query self-auditing, source
+correlation, persistent findings, detection UI, automatic enforcement, and
+production retention jobs remain deferred.

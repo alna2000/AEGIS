@@ -21,19 +21,25 @@ learning path or stronger security approach is discovered.
    **Complete.**
 6. **Phase 6 — Audit, Monitoring & Security Testing**
    Improve observability and systematically test the security controls.
+   **Complete.**
 7. **Phase 7 — Home Server Deployment & Public Access**
    Harden and deploy AEGIS after private review and recovery testing.
+   **Not started / deferred.**
 8. **Phase 8 — Final Review, Documentation & Portfolio Release**
    Complete verification and prepare the AEGIS v1 portfolio release.
+   **Not started / deferred.**
 
 ## Current milestone
 
 ```text
+Phase 1: COMPLETE
 Phase 2: COMPLETE
 Phase 3: COMPLETE
 Phase 4: COMPLETE
 Phase 5: COMPLETE
-Phase 6: NOT STARTED
+Phase 6: COMPLETE
+Phase 7: NOT STARTED / DEFERRED
+Phase 8: NOT STARTED / DEFERRED
 ```
 
 Phase 1 is complete: Part 1 established the verified minimal FastAPI foundation,
@@ -85,8 +91,16 @@ a centralized typed and bounded abuse-control engine, process-local ephemeral
 state behind a storage abstraction, HMAC correlation, layered authentication and
 availability controls, challenge-only MFA revocation, expensive-work concurrency,
 public GET/HEAD protection, an independent health endpoint, and minimal 429 UI
-compatibility. Phase 6 has not started and must begin with logging and monitoring
-inspection and design.
+compatibility. Phase 6 is complete. It adds typed append-oriented durable
+security events, transaction-coupled producer integration, authorized bounded
+audit visibility, deterministic non-persistent detections, a Security Auditor
+detection API, and an approved synthetic security exercise. Phase 7 and Phase 8
+remain postponed.
+
+The next immediate task is **Local Manual Demo / Easy Startup**. It is not Phase
+7: it should make local startup and browser use straightforward, clarify the
+least-privileged PostgreSQL migration/runtime workflow, and prepare for later
+authorized local security testing without beginning deployment.
 
 ## Phase Completion and Handover Protocol
 

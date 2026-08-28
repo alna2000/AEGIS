@@ -10,18 +10,22 @@ finite hash-only server-side sessions, and the encrypted service-layer TOTP
 credential foundation plus short-lived hash-only MFA challenges and final TOTP
 session issuance. **Phase 3 - Authorization & Classified Records is complete;
 Parts 1-4 are implemented, security-reviewed, verified, and checkpointed. Phase
-4 - Modern Security Interface and Phase 5 - Bot Detection & Abuse Protection
-are complete, security-reviewed, verified, and checkpointed. Phase 6 - Security
-Logging, Monitoring, Audit Visibility, and Detection has not started.**
+4 - Modern Security Interface, Phase 5 - Bot Detection & Abuse Protection, and
+Phase 6 - Security Logging, Monitoring, Audit Visibility, and Detection are
+complete, security-reviewed, verified, and checkpointed. Phase 7 and Phase 8
+remain deferred.**
 Authentication still proves identity only and grants no authorization.
 PostgreSQL remains the application target and is not provisioned by this repository.
 
 ```text
+Phase 1: COMPLETE
 Phase 2: COMPLETE
 Phase 3: COMPLETE
 Phase 4: COMPLETE
 Phase 5: COMPLETE
-Phase 6: NOT STARTED
+Phase 6: COMPLETE
+Phase 7: NOT STARTED / DEFERRED
+Phase 8: NOT STARTED / DEFERRED
 ```
 
 Phase 3 Part 1 adds controlled role, department, clearance, and compartment
@@ -148,7 +152,7 @@ For local manual testing, first apply migrations and create an active synthetic
 user through the explicit local bootstrap command; no public account or MFA
 enrollment endpoint exists. The command refuses every environment except
 `development` and `test`, requires the database to be exactly at Alembic revision
-`20260826_0007`, and commits its deterministic synthetic fixture atomically.
+`20260827_0010`, and commits its deterministic synthetic fixture atomically.
 It never runs during application startup or migration execution.
 
 Set the demo password only in the current process environment, run the command,
@@ -157,17 +161,20 @@ normal password service and is neither printed nor stored in source:
 
 ```powershell
 $env:AEGIS_DEMO_PASSWORD = Read-Host 'Synthetic demo password'
+$env:AEGIS_DEMO_MFA_SECRET = Read-Host 'Synthetic demo MFA secret'
 python -m aegis.dev.bootstrap_demo
 Remove-Item Env:AEGIS_DEMO_PASSWORD
+Remove-Item Env:AEGIS_DEMO_MFA_SECRET
 ```
 
 Successful provisioning reports each deterministic user and record as created,
 already existing, or updated. Re-running it is safe and does not duplicate rows.
-The primary password-only account is `demo.analyst`: Analyst role, Cyber
+The primary MFA-enabled account is `demo.analyst`: Analyst role, Cyber
 Intelligence department, SECRET clearance, and NIGHTFALL compartment. The
 limited `demo.limited` account and records `INT-90001` through `INT-90005`
 exercise positive and negative clearance, department, and compartment cases.
-All names and content are fictional.
+The fixture also supplies synthetic Security Auditor and System Administrator
+accounts for backend authorization checks. All names and content are fictional.
 
 **Local synthetic development data only. Never use this bootstrap mechanism in
 production.** Start AEGIS with `python -m uvicorn aegis.main:app --reload`, then
@@ -224,10 +231,12 @@ protection, challenge-only fifth-failure revocation, authenticated-record and
 public GET/HEAD availability protection, `/health` independence, and generic UI
 429 compatibility. The store is deliberately single-process, ephemeral, bounded,
 and reset on restart; it is not distributed or edge protection. A structured
-manual security exercise with fully configured synthetic MFA accounts is planned
-after Phase 6 supplies safe audit/monitoring visibility and the applicable
-deployment boundary is ready.
+synthetic security exercise has verified the Phase 6 audit and detection
+boundary. Findings remain bounded review signals, not enforcement.
 
-See `Phase_5_Completion_Summary.md` for the completed abuse-protection boundary.
-Phase 6 must begin with `AEGIS_Phase6_Opening_Prompt.md`; no Phase 6 implementation
-has started.
+See `Phase_6_Completion_Summary.md` and
+`Phase_6_Security_Exercise_Report.md` for the completed audit, visibility,
+detection, and exercise boundary. The next immediate task is **Local Manual Demo
+/ Easy Startup**, not Phase 7. The configured local PostgreSQL runtime role's
+inability to read `alembic_version` must be resolved through a reviewed local
+setup/privilege workflow before manual testing; do not broaden it ad hoc.

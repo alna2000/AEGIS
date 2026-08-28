@@ -2,9 +2,9 @@
 
 ```text
 Project: AEGIS - Classified Intelligence Access System
-Completed Phase: Phase 5 - Bot Detection & Abuse Protection
+Completed Phase: Phase 6 - Security Logging, Monitoring, Audit Visibility, and Detection
 Status: COMPLETE
-Current Phase: Phase 6 - Security Logging, Monitoring, Audit Visibility, and Detection
+Current Phase: None; Phase 7 and Phase 8 are deferred
 Phase 1: COMPLETE
 Phase 2: COMPLETE
 Phase 3: COMPLETE
@@ -14,13 +14,15 @@ Phase 3 Part 3: COMPLETE / CHECKPOINTED
 Phase 3 Part 4: COMPLETE / CHECKPOINTED
 Phase 4: COMPLETE / CHECKPOINTED
 Phase 5: COMPLETE / CHECKPOINTED
-Phase 6: IN PROGRESS
+Phase 6: COMPLETE / CHECKPOINTED
 Phase 6 Part 1: COMPLETE / CHECKPOINTED
 Phase 6 Part 2: COMPLETE / CHECKPOINTED
 Phase 6 Part 3: COMPLETE / CHECKPOINTED
 Phase 6 Part 4A: COMPLETE / CHECKPOINTED
-Phase 6 Part 4B: IMPLEMENTED LOCALLY / PENDING REVIEW
-Phase 6 final security exercise: COMPLETED LOCALLY / PENDING REVIEW
+Phase 6 Part 4B: COMPLETE / CHECKPOINTED
+Phase 6 final security exercise: COMPLETE / CHECKPOINTED
+Phase 7: NOT STARTED / DEFERRED
+Phase 8: NOT STARTED / DEFERRED
 ```
 
 ## What AEGIS is
@@ -627,7 +629,8 @@ independent of audit persistence.
 
 ## Phase 6 Part 3 local implementation status
 
-Phase 6 remains **IN PROGRESS**. Parts 1 and 2 are complete and checkpointed;
+At the Part 3 checkpoint, Phase 6 remained **IN PROGRESS**. Parts 1 and 2 were
+complete and checkpointed;
 Part 3 is implemented locally and pending review. Migration `20260827_0010`
 adds only the controlled `RESOURCE_COLLECTION_READ` event code.
 
@@ -650,8 +653,9 @@ detections, SIEM, UI expansion, and Phase 7 remain deferred.
 
 ## Phase 6 Part 4A local implementation status
 
-Phase 6 remains **IN PROGRESS**. Parts 1 through 3 and Part 4A are complete and
-checkpointed. Part 4B is implemented locally and pending review. No migration
+At the Part 4A/4B implementation checkpoint, Phase 6 remained **IN PROGRESS**.
+Parts 1 through 3 and Part 4A were complete and checkpointed. Part 4B was
+implemented locally and pending review. No migration
 or findings table was added.
 
 The engine derives immutable bounded findings from existing `audit_events` for
@@ -675,3 +679,28 @@ engine caps, returns only the fixed safe finding projection, and maps detection
 failure to a generic 503. It creates no finding or query-audit record and has no
 enforcement behavior. The local security exercise, detection UI, persistent
 findings, audit-query self-auditing, SIEM, and Phase 7 remain deferred.
+
+## Phase 6 completion boundary
+
+Phase 6 is **COMPLETE**. Persistent typed audit evidence, authentication/session
+integration, authorization/resource/abuse visibility, bounded Security Auditor
+queries, nine deterministic derived detectors, the detection API, and the
+structured synthetic exercise are implemented, reviewed, verified, and
+checkpointed. The final automated baseline is `427 passed, 2 known warnings`,
+and Alembic has the single head `20260827_0010`.
+
+The exercise found no application defect. The configured local PostgreSQL
+application/runtime role could not read `alembic_version`, so the live
+development database was not modified; isolated real-flow SQLite persistence
+was used instead. Local database setup and privilege workflow must be reviewed
+before manual local testing without broadening the runtime role casually.
+
+The next immediate task is **Local Manual Demo / Easy Startup**, a non-phase
+local usability task. Phase 7, Phase 8, deployment, Wazuh/SIEM, shared rate
+limiting, proxy trust hardening, audit-query self-auditing, source correlation,
+persistent findings, detection UI, automatic enforcement, and production
+retention jobs remain deferred.
+
+The separate learning path remains: build AEGIS, learn it deeply, test/attack it
+safely, remediate weaknesses, retest, and document the learning and professional
+security assessment.
