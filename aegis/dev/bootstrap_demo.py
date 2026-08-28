@@ -8,16 +8,17 @@ import os
 import sys
 import uuid
 
-from sqlalchemy import Engine, delete, inspect, select, text
+from sqlalchemy import Engine, create_engine, delete, inspect, select, text
 from sqlalchemy.orm import Session
 
 from aegis.core.config import Settings
+from aegis.core.migration_config import MigrationSettings
 from aegis.db.models import (
     ClearanceLevel, Compartment, Department, IntelligenceRecord,
     IntelligenceRecordStatus, MfaCredential, RecordCompartment,
     RecordDepartment, Role, User, UserCompartment, UserRole,
 )
-from aegis.db.session import create_database_engine, create_session_factory
+from aegis.db.session import create_session_factory
 from aegis.security.passwords import PasswordService
 from aegis.security.mfa_encryption import (
     MfaSecretCipher,
@@ -286,7 +287,10 @@ def bootstrap_demo(
     environment = _environment(settings)
     PasswordService().hash(password)
     owns_engine = engine is None
-    database_engine = engine or create_database_engine(settings)
+    database_engine = engine or create_engine(
+        MigrationSettings().migration_database_url.get_secret_value(),
+        pool_pre_ping=True,
+    )
     try:
         revision = _revision(database_engine)
         created: list[str] = []

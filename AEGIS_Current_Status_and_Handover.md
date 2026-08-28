@@ -704,3 +704,12 @@ retention jobs remain deferred.
 The separate learning path remains: build AEGIS, learn it deeply, test/attack it
 safely, remediate weaknesses, retest, and document the learning and professional
 security assessment.
+
+## Local PostgreSQL role separation
+
+The non-phase local setup now uses explicit credential domains:
+`AEGIS_MIGRATION_DATABASE_URL` is migration/setup-only, while
+`AEGIS_DATABASE_URL` remains restricted FastAPI runtime configuration. Alembic
+does not fall back to runtime credentials. The explicit reviewed runtime grant
+matrix is documented in `AEGIS_Local_PostgreSQL_Setup.md`; no launcher,
+deployment, or penetration-testing work is included.

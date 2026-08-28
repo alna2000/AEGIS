@@ -5,7 +5,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from aegis.core.config import Settings
+from aegis.core.migration_config import MigrationSettings
 from aegis.db.base import Base
 from aegis.db import models  # noqa: F401
 
@@ -17,7 +17,9 @@ if config.config_file_name is not None:
 if not config.get_main_option("sqlalchemy.url"):
     config.set_main_option(
         "sqlalchemy.url",
-        Settings().database_url.replace("%", "%%"),
+        MigrationSettings()
+        .migration_database_url.get_secret_value()
+        .replace("%", "%%"),
     )
 
 target_metadata = Base.metadata

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 import pyotp
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
@@ -21,6 +23,7 @@ from aegis.db.models import (
 from aegis.dev.bootstrap_demo import (
     RECORDS, REQUIRED_REVISION, USERS, DemoBootstrapError, bootstrap_demo,
 )
+import aegis.dev.bootstrap_demo as bootstrap_module
 from aegis.main import create_app
 from aegis.security.audit_sinks import LoggingAuthenticationAuditSink
 from aegis.security.authentication_events import AuthenticationRequestContext
@@ -80,6 +83,31 @@ def demo_engine(db_session: Session) -> Engine:
 def test_refuses_non_local_environment_before_database_use() -> None:
     with pytest.raises(DemoBootstrapError, match="only in development or test"):
         bootstrap_demo(settings("production"), PASSWORD)
+
+
+def test_default_bootstrap_uses_only_explicit_migration_connection(
+    demo_engine: Engine, monkeypatch
+) -> None:
+    captured = []
+    monkeypatch.setattr(
+        bootstrap_module,
+        "MigrationSettings",
+        lambda: SimpleNamespace(
+            migration_database_url=SecretStr("sqlite+pysqlite://setup-only")
+        ),
+    )
+    monkeypatch.setattr(
+        bootstrap_module,
+        "create_engine",
+        lambda url, **kwargs: captured.append((url, kwargs)) or demo_engine,
+    )
+    runtime = settings()
+    runtime.database_url = "sqlite+pysqlite://runtime-must-not-be-used"
+    report = bootstrap_demo(runtime, PASSWORD)
+    assert report.revision == REQUIRED_REVISION
+    assert captured == [
+        ("sqlite+pysqlite://setup-only", {"pool_pre_ping": True})
+    ]
 
 
 def test_refuses_wrong_or_missing_schema_before_writes(db_session: Session) -> None:

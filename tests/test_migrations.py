@@ -25,7 +25,7 @@ def test_environment_database_url_supports_percent_without_credential_output(
         "@db.invalid/synthetic_db"
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("AEGIS_DATABASE_URL", database_url)
+    monkeypatch.setenv("AEGIS_MIGRATION_DATABASE_URL", database_url)
 
     config = Config(str(project_root / "alembic.ini"))
     config.set_main_option("script_location", str(project_root / "migrations"))
