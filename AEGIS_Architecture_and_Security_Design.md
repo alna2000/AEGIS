@@ -1430,6 +1430,21 @@ source correlation or inferred hidden target is used.
 Detection is visibility only and cannot revoke sessions, disable users, change
 authorization or abuse state, or modify records. The audit-system-failure rule
 detects only evidence that was durably recorded; database outages that prevent
-their own audit write remain best-effort operational diagnostics. API/UI,
+their own audit write remain best-effort operational diagnostics.
+
+## Phase 6 Part 4B Security Auditor detection API
+
+`GET /audit/detections` resolves the usable session identity, reloads its
+current authorization subject, and requires the central `AUDIT` action on the
+content-free `AUDIT_EVENT` resource policy. Security Auditor therefore receives
+the existing explicit capability; System Administrator, Analyst, unusable, and
+invalid subjects do not gain route-specific access.
+
+The API accepts only an integer `lookback_hours` from 1 through 24 (default 24)
+and cannot enlarge any engine bound. It returns a fixed finding projection:
+controlled code/severity, window start/end, nullable internal subject UUID,
+event count, and bounded supporting event UUIDs. Detection errors fail with a
+generic 503 and no partial findings. Querying remains read-only: it adds neither
+persistence nor audit-query evidence and performs no enforcement. Detection UI,
 persistent findings, exercise execution, SIEM, and automatic enforcement remain
-outside Part 4A.
+outside Part 4B.

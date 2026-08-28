@@ -15,7 +15,11 @@ Phase 3 Part 4: COMPLETE / CHECKPOINTED
 Phase 4: COMPLETE / CHECKPOINTED
 Phase 5: COMPLETE / CHECKPOINTED
 Phase 6: IN PROGRESS
-Phase 6 Part 1: IMPLEMENTED LOCALLY / PENDING REVIEW
+Phase 6 Part 1: COMPLETE / CHECKPOINTED
+Phase 6 Part 2: COMPLETE / CHECKPOINTED
+Phase 6 Part 3: COMPLETE / CHECKPOINTED
+Phase 6 Part 4A: COMPLETE / CHECKPOINTED
+Phase 6 Part 4B: IMPLEMENTED LOCALLY / PENDING REVIEW
 ```
 
 ## What AEGIS is
@@ -645,10 +649,9 @@ detections, SIEM, UI expansion, and Phase 7 remain deferred.
 
 ## Phase 6 Part 4A local implementation status
 
-Phase 6 remains **IN PROGRESS**. Parts 1 through 3 are complete and
-checkpointed. Part 4 is in progress; the Part 4A deterministic detection engine
-is implemented locally and pending review. No migration or findings table was
-added.
+Phase 6 remains **IN PROGRESS**. Parts 1 through 3 and Part 4A are complete and
+checkpointed. Part 4B is implemented locally and pending review. No migration
+or findings table was added.
 
 The engine derives immutable bounded findings from existing `audit_events` for
 repeated password failure, MFA failure/exhaustion, authorization denial/error,
@@ -662,6 +665,12 @@ user UUID, count, and bounded supporting event UUIDs. They contain no source
 correlation, username, IP, token, policy attributes, classified content, or
 free-form metadata and have no enforcement behavior. Anonymous password events
 are not grouped without a safe identity; actorless abuse events contribute only
-to aggregate system pressure. Part 4B, the local security exercise, detection
-API/UI, persistent findings, audit-query self-auditing, SIEM, and Phase 7 remain
-deferred.
+to aggregate system pressure.
+
+`GET /audit/detections` now provides Security Auditor with the same central
+`AUDIT` on `AUDIT_EVENT` authorization boundary as the audit-event query. It
+accepts only a 1-to-24-hour integer lookback (24-hour default), preserves all
+engine caps, returns only the fixed safe finding projection, and maps detection
+failure to a generic 503. It creates no finding or query-audit record and has no
+enforcement behavior. The local security exercise, detection UI, persistent
+findings, audit-query self-auditing, SIEM, and Phase 7 remain deferred.

@@ -130,3 +130,6 @@
 | Group only by persisted internal identity and leave anonymous password failures ungrouped. | AEGIS has intentionally stored no plaintext username, raw IP, or source correlation, so inventing identity grouping would overstate available evidence. |
 | Allow actorless limiter events to form only aggregate abuse-pressure findings. | System pressure is meaningful without attributing it to an inferred user or exposing limiter keys. |
 | Keep detection visibility-only with no enforcement surface. | Findings are evidence for human review, not proof of malicious behavior or authority to revoke, disable, lock, or change policy. |
+| Expose Part 4B findings through `GET /audit/detections` using central `AUDIT` on `AUDIT_EVENT`. | Security Auditor reuses the established backend policy while System Administrator and Analyst receive no implicit or route-specific access. |
+| Limit the detection API to a 1-to-24-hour lookback and the fixed safe finding projection. | Callers cannot bypass engine bounds or obtain raw audit, identity, source, policy, classified, or unrestricted metadata. |
+| Keep detection queries non-persistent and unaudited in Part 4B. | This slice adds review visibility only; recursive query evidence, findings lifecycle, enforcement, UI, exercise execution, and SIEM require separate review. |

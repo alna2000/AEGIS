@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,6 +14,7 @@ from aegis.api.dependencies import (
     get_audit_query_service,
     get_authorization_subject_service,
     get_current_principal,
+    get_detection_service,
 )
 from aegis.security.authorization import (
     AuthorizationAction,
@@ -35,6 +36,7 @@ from aegis.services.audit_queries import (
     InvalidAuditQuery,
 )
 from aegis.services.authorization import AuthorizationSubjectService
+from aegis.services.detections import DetectionService
 
 
 router = APIRouter(prefix="/audit", tags=["security-audit"])
@@ -59,6 +61,20 @@ class AuditEventResponse(BaseModel):
 class AuditEventPageResponse(BaseModel):
     events: list[AuditEventResponse]
     next_cursor: str | None
+
+
+class DetectionFindingResponse(BaseModel):
+    finding_code: str
+    severity: str
+    window_start: datetime
+    window_end: datetime
+    subject_user_id: uuid.UUID | None
+    event_count: int
+    supporting_event_ids: list[uuid.UUID]
+
+
+class DetectionFindingListResponse(BaseModel):
+    findings: list[DetectionFindingResponse]
 
 
 @router.get("/events", response_model=AuditEventPageResponse)
@@ -123,6 +139,53 @@ def list_audit_events(
     return AuditEventPageResponse(
         events=[_response(event) for event in page.events],
         next_cursor=page.next_cursor,
+    )
+
+
+@router.get("/detections", response_model=DetectionFindingListResponse)
+def list_detection_findings(
+    principal: Annotated[AuthenticatedPrincipal, Depends(get_current_principal)],
+    subjects: Annotated[
+        AuthorizationSubjectService, Depends(get_authorization_subject_service)
+    ],
+    detections: Annotated[DetectionService, Depends(get_detection_service)],
+    lookback_hours: Annotated[int, Query(ge=1, le=24)] = 24,
+) -> DetectionFindingListResponse:
+    """Return bounded derived review signals after central explicit ALLOW."""
+
+    loaded = subjects.load(principal)
+    if loaded.subject is None:
+        unavailable = (
+            loaded.failure_reason is not None
+            and loaded.failure_reason.value.endswith("LOAD_ERROR")
+        )
+        raise HTTPException(
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+                if unavailable
+                else status.HTTP_403_FORBIDDEN
+            ),
+            detail="Detection service unavailable" if unavailable else "Access denied",
+        )
+    decision = authorize(
+        loaded.subject,
+        AuthorizationAction.AUDIT,
+        ResourcePolicy(AuthorizationResourceType.AUDIT_EVENT),
+    )
+    if decision.outcome is not AuthorizationOutcome.ALLOW:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    try:
+        findings = detections.detect(
+            now=datetime.now(timezone.utc),
+            lookback=timedelta(hours=lookback_hours),
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Detection service unavailable",
+        ) from None
+    return DetectionFindingListResponse(
+        findings=[DetectionFindingResponse(**asdict(finding)) for finding in findings]
     )
 
 
