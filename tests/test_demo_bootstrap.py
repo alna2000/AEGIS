@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import uuid
 
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
+import pyotp
 import pytest
 from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
@@ -13,7 +15,8 @@ from aegis.api.dependencies import get_db_session
 from aegis.core.config import Settings, get_settings
 from aegis.db.models import (
     ClearanceLevel, Compartment, Department, IntelligenceRecord,
-    RecordCompartment, RecordDepartment, Role, User, UserCompartment, UserRole,
+    MfaCredential, RecordCompartment, RecordDepartment, Role, User,
+    UserCompartment, UserRole,
 )
 from aegis.dev.bootstrap_demo import (
     RECORDS, REQUIRED_REVISION, USERS, DemoBootstrapError, bootstrap_demo,
@@ -22,11 +25,14 @@ from aegis.main import create_app
 from aegis.security.audit_sinks import LoggingAuthenticationAuditSink
 from aegis.security.authentication_events import AuthenticationRequestContext
 from aegis.security.passwords import PasswordService
+from aegis.security.mfa_encryption import MfaSecretCipher
 from aegis.services.authentication import AuthenticationService, LoginAttemptStatus
 from aegis.db.repositories import UserRepository
 
 
 PASSWORD = "Synthetic-Demo-Password-84!"
+MFA_SECRET = pyotp.random_base32()
+MFA_KEY = Fernet.generate_key().decode("ascii")
 
 
 def settings(environment: str = "test") -> Settings:
@@ -34,6 +40,7 @@ def settings(environment: str = "test") -> Settings:
         environment=environment,
         database_url="sqlite+pysqlite:///:memory:",
         session_cookie_secure=environment not in {"development", "test"},
+        mfa_encryption_key=MFA_KEY,
         _env_file=None,
     )
 
@@ -49,6 +56,8 @@ def prepare_database(engine: Engine) -> None:
         session.add_all(
             [
                 Role(id=uuid.UUID("30000000-0000-0000-0000-000000000001"), name="Analyst", is_active=True),
+                Role(id=uuid.UUID("30000000-0000-0000-0000-000000000004"), name="Security Auditor", is_active=True),
+                Role(id=uuid.UUID("30000000-0000-0000-0000-000000000005"), name="System Administrator", is_active=True),
                 Department(id=uuid.UUID("31000000-0000-0000-0000-000000000001"), name="Cyber Intelligence", is_active=True),
                 Department(id=uuid.UUID("31000000-0000-0000-0000-000000000003"), name="Strategic Analysis", is_active=True),
                 ClearanceLevel(id=uuid.UUID("32000000-0000-0000-0000-000000000002"), name="CONFIDENTIAL", rank=20),
@@ -99,12 +108,16 @@ def test_refuses_prior_phase_head_without_weakening_exact_revision_guard(
 
 
 def test_creates_hashed_users_assignments_and_policy_matrix(demo_engine: Engine) -> None:
-    report = bootstrap_demo(settings(), PASSWORD, engine=demo_engine)
-    assert len(report.created) == len(USERS) + len(RECORDS)
+    report = bootstrap_demo(
+        settings(), PASSWORD, mfa_secret=MFA_SECRET, engine=demo_engine
+    )
+    assert len(report.created) == len(USERS) + len(RECORDS) + 1
     with Session(demo_engine) as session:
         primary = session.scalar(select(User).where(User.username == "demo.analyst"))
         limited = session.scalar(select(User).where(User.username == "demo.limited"))
-        assert primary is not None and limited is not None
+        auditor = session.scalar(select(User).where(User.username == "demo.auditor"))
+        administrator = session.scalar(select(User).where(User.username == "demo.admin"))
+        assert all(item is not None for item in (primary, limited, auditor, administrator))
         assert primary.password_hash != PASSWORD
         assert PASSWORD not in primary.password_hash
         assert PasswordService().verify(PASSWORD, primary.password_hash)
@@ -114,6 +127,16 @@ def test_creates_hashed_users_assignments_and_policy_matrix(demo_engine: Engine)
         assert {item.compartment.name for item in primary.compartment_assignments} == {"NIGHTFALL"}
         assert limited.clearance_level.name == "CONFIDENTIAL"
         assert limited.compartment_assignments == []
+        assert {item.role.name for item in auditor.role_assignments} == {"Security Auditor"}
+        assert {item.role.name for item in administrator.role_assignments} == {"System Administrator"}
+        credential = session.scalar(
+            select(MfaCredential).where(MfaCredential.user_id == primary.id)
+        )
+        assert credential is not None and credential.enabled
+        assert credential.encrypted_secret != MFA_SECRET
+        assert MfaSecretCipher(MFA_KEY, "v1").decrypt(
+            credential.encrypted_secret, credential.encryption_key_id
+        ) == MFA_SECRET
         assert session.scalar(select(func.count()).select_from(IntelligenceRecord)) == 5
         assert session.scalar(select(func.count()).select_from(RecordDepartment)) == 5
         assert session.scalar(select(func.count()).select_from(RecordCompartment)) == 3
@@ -149,20 +172,21 @@ def test_real_authentication_service_accepts_demo_password(demo_engine: Engine) 
 
 
 def test_idempotent_rerun_has_no_duplicate_users_records_or_links(demo_engine: Engine) -> None:
-    first = bootstrap_demo(settings(), PASSWORD, engine=demo_engine)
-    second = bootstrap_demo(settings(), PASSWORD, engine=demo_engine)
-    assert len(first.created) == 7
+    first = bootstrap_demo(settings(), PASSWORD, mfa_secret=MFA_SECRET, engine=demo_engine)
+    second = bootstrap_demo(settings(), PASSWORD, mfa_secret=MFA_SECRET, engine=demo_engine)
+    assert len(first.created) == 10
     assert second.created == ()
-    assert len(second.existed) == 7
+    assert len(second.existed) == 10
     assert second.updated == ()
     with Session(demo_engine) as session:
-        assert session.scalar(select(func.count()).select_from(User)) == 2
+        assert session.scalar(select(func.count()).select_from(User)) == 4
         assert session.scalar(select(func.count()).select_from(IntelligenceRecord)) == 5
-        assert session.scalar(select(func.count()).select_from(UserRole)) == 2
+        assert session.scalar(select(func.count()).select_from(UserRole)) == 4
         assert session.scalar(select(func.count()).select_from(UserCompartment)) == 1
         assert session.scalar(select(func.count()).select_from(RecordDepartment)) == 5
         assert session.scalar(select(func.count()).select_from(RecordCompartment)) == 3
-        assert session.scalar(select(func.count()).select_from(Role)) == 1
+        assert session.scalar(select(func.count()).select_from(MfaCredential)) == 1
+        assert session.scalar(select(func.count()).select_from(Role)) == 3
         assert session.scalar(select(func.count()).select_from(Department)) == 2
         assert session.scalar(select(func.count()).select_from(ClearanceLevel)) == 3
         assert session.scalar(select(func.count()).select_from(Compartment)) == 2

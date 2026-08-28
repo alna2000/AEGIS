@@ -14,14 +14,19 @@ from sqlalchemy.orm import Session
 from aegis.core.config import Settings
 from aegis.db.models import (
     ClearanceLevel, Compartment, Department, IntelligenceRecord,
-    IntelligenceRecordStatus, RecordCompartment, RecordDepartment, Role, User,
-    UserCompartment, UserRole,
+    IntelligenceRecordStatus, MfaCredential, RecordCompartment,
+    RecordDepartment, Role, User, UserCompartment, UserRole,
 )
 from aegis.db.session import create_database_engine, create_session_factory
 from aegis.security.passwords import PasswordService
+from aegis.security.mfa_encryption import (
+    MfaSecretCipher,
+    MfaSecretDecryptionError,
+)
 
-REQUIRED_REVISION = "20260826_0007"
+REQUIRED_REVISION = "20260827_0010"
 DEMO_PASSWORD_ENV = "AEGIS_DEMO_PASSWORD"
+DEMO_MFA_SECRET_ENV = "AEGIS_DEMO_MFA_SECRET"
 CREATED_AT = datetime(2026, 8, 24, 12, tzinfo=timezone.utc)
 
 
@@ -66,6 +71,8 @@ class BootstrapReport:
 USERS = (
     UserSpec(uuid.UUID("40000000-0000-0000-0000-000000000001"), "demo.analyst", "Demo Analyst", "Cyber Intelligence", "SECRET", ("Analyst",), ("NIGHTFALL",)),
     UserSpec(uuid.UUID("40000000-0000-0000-0000-000000000002"), "demo.limited", "Demo Limited Analyst", "Cyber Intelligence", "CONFIDENTIAL", ("Analyst",), ()),
+    UserSpec(uuid.UUID("40000000-0000-0000-0000-000000000003"), "demo.auditor", "Demo Security Auditor", "Cyber Intelligence", "CONFIDENTIAL", ("Security Auditor",), ()),
+    UserSpec(uuid.UUID("40000000-0000-0000-0000-000000000004"), "demo.admin", "Demo System Administrator", "Cyber Intelligence", "CONFIDENTIAL", ("System Administrator",), ()),
 )
 
 RECORDS = (
@@ -103,6 +110,8 @@ def _revision(engine: Engine) -> str:
 def _references(session: Session) -> dict[str, object]:
     expected = {
         "Analyst": (Role, "30000000-0000-0000-0000-000000000001"),
+        "Security Auditor": (Role, "30000000-0000-0000-0000-000000000004"),
+        "System Administrator": (Role, "30000000-0000-0000-0000-000000000005"),
         "Cyber Intelligence": (Department, "31000000-0000-0000-0000-000000000001"),
         "Strategic Analysis": (Department, "31000000-0000-0000-0000-000000000003"),
         "CONFIDENTIAL": (ClearanceLevel, "32000000-0000-0000-0000-000000000002"),
@@ -210,7 +219,69 @@ def _records(session: Session, refs: dict[str, object], users: dict[str, User], 
     session.flush()
 
 
-def bootstrap_demo(settings: Settings, password: str, *, engine: Engine | None = None) -> BootstrapReport:
+def _mfa(
+    session: Session,
+    settings: Settings,
+    user: User,
+    secret: str,
+    created: list[str],
+    existed: list[str],
+    updated: list[str],
+) -> None:
+    cipher = MfaSecretCipher(
+        settings.mfa_encryption_key,
+        settings.mfa_encryption_key_id,
+    )
+    credential = session.scalar(
+        select(MfaCredential).where(
+            MfaCredential.user_id == user.id,
+            MfaCredential.disabled_at.is_(None),
+        )
+    )
+    label = f"mfa:{user.username}"
+    if credential is None:
+        session.add(
+            MfaCredential(
+                id=uuid.UUID("42000000-0000-0000-0000-000000000001"),
+                user_id=user.id,
+                encrypted_secret=cipher.encrypt(secret),
+                encryption_key_id=cipher.key_id,
+                enabled=True,
+                created_at=CREATED_AT,
+            )
+        )
+        created.append(label)
+        return
+    try:
+        unchanged = (
+            credential.enabled
+            and credential.encryption_key_id == cipher.key_id
+            and cipher.decrypt(
+                credential.encrypted_secret,
+                credential.encryption_key_id,
+            )
+            == secret
+        )
+    except MfaSecretDecryptionError:
+        unchanged = False
+    if unchanged:
+        existed.append(label)
+        return
+    credential.encrypted_secret = cipher.encrypt(secret)
+    credential.encryption_key_id = cipher.key_id
+    credential.enabled = True
+    credential.last_used_at = None
+    credential.last_accepted_counter = None
+    updated.append(label)
+
+
+def bootstrap_demo(
+    settings: Settings,
+    password: str,
+    *,
+    mfa_secret: str | None = None,
+    engine: Engine | None = None,
+) -> BootstrapReport:
     """Provision the fixture only after local-environment and exact-schema checks."""
     environment = _environment(settings)
     PasswordService().hash(password)
@@ -226,6 +297,16 @@ def bootstrap_demo(settings: Settings, password: str, *, engine: Engine | None =
             refs = _references(session)
             users = _users(session, password, refs, created, existed, updated)
             _records(session, refs, users, created, existed, updated)
+            if mfa_secret is not None:
+                _mfa(
+                    session,
+                    settings,
+                    users["demo.analyst"],
+                    mfa_secret,
+                    created,
+                    existed,
+                    updated,
+                )
         return BootstrapReport(environment, revision, tuple(created), tuple(existed), tuple(updated), ())
     finally:
         if owns_engine:
@@ -249,7 +330,12 @@ def main() -> int:
         password = os.environ.get(DEMO_PASSWORD_ENV)
         if password is None:
             raise DemoBootstrapError(f"{DEMO_PASSWORD_ENV} must be set for this command")
-        _print(bootstrap_demo(settings, password))
+        mfa_secret = os.environ.get(DEMO_MFA_SECRET_ENV)
+        if mfa_secret is None:
+            raise DemoBootstrapError(
+                f"{DEMO_MFA_SECRET_ENV} must be set for this command"
+            )
+        _print(bootstrap_demo(settings, password, mfa_secret=mfa_secret))
         return 0
     except Exception as error:
         message = str(error) if isinstance(error, DemoBootstrapError) else "demo bootstrap failed; no demo data was committed"
