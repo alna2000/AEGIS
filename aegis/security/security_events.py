@@ -37,6 +37,7 @@ class SecurityEventCode(str, Enum):
     AUTHORIZATION_DENIED = "AUTHORIZATION_DENIED"
     AUTHORIZATION_ERROR = "AUTHORIZATION_ERROR"
     RESOURCE_READ_SUCCEEDED = "RESOURCE_READ_SUCCEEDED"
+    RESOURCE_COLLECTION_READ = "RESOURCE_COLLECTION_READ"
     RESOURCE_READ_INACCESSIBLE = "RESOURCE_READ_INACCESSIBLE"
     ABUSE_ADMISSION_DENIED = "ABUSE_ADMISSION_DENIED"
     ABUSE_STORE_UNAVAILABLE = "ABUSE_STORE_UNAVAILABLE"
@@ -131,6 +132,7 @@ _EVENT_DEFINITIONS: Mapping[SecurityEventCode, _EventDefinition] = MappingProxyT
         SecurityEventCode.AUTHORIZATION_DENIED: _EventDefinition(SecurityEventFamily.AUTHORIZATION, SecurityEventOutcome.DENY, SecurityEventSeverity.LOW, SecurityEventAction.AUTHORIZE, True),
         SecurityEventCode.AUTHORIZATION_ERROR: _EventDefinition(SecurityEventFamily.AUTHORIZATION, SecurityEventOutcome.ERROR, SecurityEventSeverity.HIGH, SecurityEventAction.AUTHORIZE, True),
         SecurityEventCode.RESOURCE_READ_SUCCEEDED: _EventDefinition(SecurityEventFamily.RESOURCE_ACCESS, SecurityEventOutcome.SUCCESS, SecurityEventSeverity.INFORMATIONAL, SecurityEventAction.READ_RESOURCE, False),
+        SecurityEventCode.RESOURCE_COLLECTION_READ: _EventDefinition(SecurityEventFamily.RESOURCE_ACCESS, SecurityEventOutcome.SUCCESS, SecurityEventSeverity.INFORMATIONAL, SecurityEventAction.READ_RESOURCE, False),
         SecurityEventCode.RESOURCE_READ_INACCESSIBLE: _EventDefinition(SecurityEventFamily.RESOURCE_ACCESS, SecurityEventOutcome.DENY, SecurityEventSeverity.LOW, SecurityEventAction.READ_RESOURCE, True),
         SecurityEventCode.ABUSE_ADMISSION_DENIED: _EventDefinition(SecurityEventFamily.ABUSE_CONTROL, SecurityEventOutcome.LIMITED, SecurityEventSeverity.MEDIUM, SecurityEventAction.APPLY_ABUSE_CONTROL, True),
         SecurityEventCode.ABUSE_STORE_UNAVAILABLE: _EventDefinition(SecurityEventFamily.OPERATIONAL_SECURITY, SecurityEventOutcome.ERROR, SecurityEventSeverity.HIGH, SecurityEventAction.APPLY_ABUSE_CONTROL, True),

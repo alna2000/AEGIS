@@ -619,3 +619,26 @@ The older operational authentication logger remains best-effort diagnostics.
 No audit query API/UI, authorization or record integration, detection, SIEM,
 source-correlation generation, or Phase 7 work is included. `/health` remains
 independent of audit persistence.
+
+## Phase 6 Part 3 local implementation status
+
+Phase 6 remains **IN PROGRESS**. Parts 1 and 2 are complete and checkpointed;
+Part 3 is implemented locally and pending review. Migration `20260827_0010`
+adds only the controlled `RESOURCE_COLLECTION_READ` event code.
+
+Classified detail reads now commit request-level authorization and access
+evidence before content is returned. Hidden 404 evidence uses generic controlled
+reasons and contains neither record UUID nor candidate code. Successful
+collections emit exactly one `RESOURCE_COLLECTION_READ` event with no counts,
+candidate facts, or per-candidate decision amplification. Meaningful record-route
+abuse denial, store capacity/unavailability, and concurrency saturation outcomes
+use controlled secret-free endpoint evidence; successful admission is not
+audited. Public/static/docs behavior and `/health` remain database-independent.
+
+`GET /audit/events` reloads current authorization state and requires an explicit
+central `AUDIT` allow for `AUDIT_EVENT`; only Security Auditor has that existing
+capability. Queries default to 24 hours, allow at most 31 days and 100 rows, use
+stable descending cursor pagination, and expose a fixed projection without
+source correlation, usernames, network/client data, metadata, policy facts, or
+classified content. Audit-query self-auditing, source-correlation generation,
+detections, SIEM, UI expansion, and Phase 7 remain deferred.

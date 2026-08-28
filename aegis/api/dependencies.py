@@ -17,6 +17,7 @@ from aegis.db.repositories import (
 )
 from aegis.db.authorization_repositories import AuthorizationSubjectRepository
 from aegis.db.audit_repositories import AuditEventWriterRepository
+from aegis.db.audit_query_repositories import AuditEventQueryRepository
 from aegis.db.intelligence_record_repositories import (
     IntelligenceRecordContentRepository,
     IntelligenceRecordPolicyRepository,
@@ -31,6 +32,7 @@ from aegis.security.mfa_encryption import MfaKeyConfigurationError, MfaSecretCip
 from aegis.security.totp import TotpService
 from aegis.services.authentication import AuthenticatedPrincipal, AuthenticationService
 from aegis.services.audit import AuditService
+from aegis.services.audit_queries import AuditQueryService
 from aegis.services.mfa import MfaService
 from aegis.services.mfa_challenges import MfaChallengeService
 from aegis.services.sessions import SessionService
@@ -75,6 +77,20 @@ def get_audit_service(
     """Return the durable writer in the request's caller-owned transaction."""
 
     return AuditService(AuditEventWriterRepository(database_session))
+
+
+def get_audit_query_service(
+    database_session: Annotated[Session, Depends(get_db_session)],
+) -> AuditQueryService:
+    """Return the separate bounded read-only audit query service."""
+
+    return AuditQueryService(AuditEventQueryRepository(database_session))
+
+
+def get_authorization_subject_service(
+    database_session: Annotated[Session, Depends(get_db_session)],
+) -> AuthorizationSubjectService:
+    return AuthorizationSubjectService(AuthorizationSubjectRepository(database_session))
 
 
 def get_authentication_abuse_control(request: Request) -> AuthenticationAbuseControl:

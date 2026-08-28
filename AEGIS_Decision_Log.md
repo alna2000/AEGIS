@@ -118,3 +118,10 @@
 | Stage authentication state and mandatory audit in one caller-owned transaction. | Security state and its evidence commit together or roll back together; repositories and services never commit. |
 | Represent replacement with `SESSION_REVOKED` plus `SESSION_ESTABLISHED` under one request ID. | The pair records the actual changes without a redundant replacement code. |
 | Emit `LOGOUT_SUCCEEDED` for completed idempotent logout and `SESSION_REVOKED` only for an actual revocation. | Completion is observable without falsely claiming absent server state changed. |
+| Add only `RESOURCE_COLLECTION_READ` in migration `20260827_0010`. | One successful collection request needs accurate bounded evidence without per-candidate authorization amplification or speculative future codes. |
+| Commit classified detail access evidence before returning content. | Read-only data access cannot be atomic with a state transition, but mandatory evidence can be committed before disclosure; audit failure therefore returns generic 503 with no content. |
+| Make hidden detail evidence generic and omit record UUID and candidate code. | Missing and ordinarily inaccessible records must remain indistinguishable to clients and audit-query readers. |
+| Emit exactly one collection event with no counts or candidate facts. | The actor already receives its authorized array, but omitting counts minimizes cross-actor behavioral disclosure and avoids recording hidden candidates. |
+| Authorize audit queries through central `AUDIT` on a content-free `AUDIT_EVENT` policy. | Security Auditor receives the existing explicit capability while System Administrator and other roles gain no implicit access or endpoint-specific bypass. |
+| Separate bounded audit queries from the append-only writer. | Stable cursor pagination and exact controlled filters do not broaden the writer into CRUD or expose update/delete operations. |
+| Defer audit-query self-auditing and source correlation. | `AUDIT_QUERY_EXECUTED` is not approved and recursive write/query behavior plus separately keyed correlation require later focused review. |

@@ -36,6 +36,7 @@ def test_environment_database_url_supports_percent_without_credential_output(
     assert "CREATE TABLE audit_events" in captured.out
     assert "MFA_CHALLENGE_ISSUED" in captured.out
     assert "LOGOUT_SUCCEEDED" in captured.out
+    assert "RESOURCE_COLLECTION_READ" in captured.out
     assert configured_url == database_url
     assert make_url(configured_url).password == synthetic_password
     assert database_url not in captured.out
@@ -693,6 +694,7 @@ def test_part_2_audit_code_extension_round_trips_only_the_constraint(
         )
     engine.dispose()
 
+
     command.upgrade(config, "20260827_0009")
     engine = create_engine(database_url)
     inspector = inspect(engine)
@@ -741,4 +743,46 @@ def test_part_2_audit_code_extension_round_trips_only_the_constraint(
                 **{key: value for key, value in base_values.items() if key != "action"},
             )
         )
+    engine.dispose()
+
+
+def test_part_3_collection_code_round_trips_only_the_constraint(tmp_path: Path) -> None:
+    database_url = f"sqlite+pysqlite:///{(tmp_path / 'part3-audit.sqlite3').as_posix()}"
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(config, "20260827_0009")
+    engine = create_engine(database_url)
+    before = inspect(engine)
+    columns = tuple(column["name"] for column in before.get_columns("audit_events"))
+    indexes = {item["name"]: tuple(item["column_names"]) for item in before.get_indexes("audit_events")}
+    engine.dispose()
+
+    command.upgrade(config, "20260827_0010")
+    engine = create_engine(database_url)
+    after = inspect(engine)
+    assert tuple(column["name"] for column in after.get_columns("audit_events")) == columns
+    assert {item["name"]: tuple(item["column_names"]) for item in after.get_indexes("audit_events")} == indexes
+    table = Table("audit_events", MetaData(), autoload_with=engine)
+    values = {
+        "id": uuid.uuid4().hex,
+        "occurred_at": datetime(2026, 8, 27, 16, 0, tzinfo=timezone.utc),
+        "event_code": "RESOURCE_COLLECTION_READ",
+        "outcome": "SUCCESS",
+        "severity": "INFORMATIONAL",
+        "actor_type": "SYSTEM",
+        "action": "READ_RESOURCE",
+    }
+    with engine.begin() as connection:
+        connection.execute(table.insert().values(**values))
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(table.insert().values(**{**values, "id": uuid.uuid4().hex, "event_code": "AUDIT_QUERY_EXECUTED"}))
+    with engine.begin() as connection:
+        connection.execute(table.delete())
+    engine.dispose()
+
+    command.downgrade(config, "20260827_0009")
+    engine = create_engine(database_url)
+    table = Table("audit_events", MetaData(), autoload_with=engine)
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(table.insert().values(**values))
     engine.dispose()

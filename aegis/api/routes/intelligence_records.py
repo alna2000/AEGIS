@@ -1,20 +1,33 @@
 """HTTP access to explicitly authorized synthetic intelligence records."""
 
+import logging
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from aegis.api.dependencies import (
+    get_audit_service,
     get_availability_abuse_control,
+    get_db_session,
     get_intelligence_record_collection_read_service,
     get_intelligence_record_read_service,
     get_session_service,
 )
 from aegis.core.config import Settings, get_settings
-from aegis.security.abuse import AbuseDecision, AbuseDecisionStatus
+from aegis.security.abuse import AbuseDecision, AbuseDecisionReason, AbuseDecisionStatus
 from aegis.security.authentication_events import AuthenticationRequestContext
 from aegis.security.availability_abuse import AvailabilityAbuseControl
+from aegis.security.security_events import (
+    SecurityActorType,
+    SecurityEventCode,
+    SecurityEventDraft,
+    SecurityEventReason,
+    SecurityTargetType,
+)
+from aegis.services.audit import AuditService
 from aegis.services.intelligence_records import (
     IntelligenceRecordCollectionReadOutcome,
     IntelligenceRecordCollectionReadResult,
@@ -28,6 +41,7 @@ import uuid
 
 
 router = APIRouter(prefix="/records", tags=["intelligence-records"])
+_LOGGER = logging.getLogger(__name__)
 _RECORD_NOT_FOUND = "Record not found"
 _RECORD_SERVICE_UNAVAILABLE = "Classified record service unavailable"
 
@@ -62,19 +76,28 @@ def list_intelligence_records(
         IntelligenceRecordCollectionReadService,
         Depends(get_intelligence_record_collection_read_service),
     ],
+    audit: Annotated[AuditService, Depends(get_audit_service)],
+    database_session: Annotated[Session, Depends(get_db_session)],
 ) -> list[IntelligenceRecordCollectionEntryResponse]:
     """Return metadata only for records allowed for SEARCH and READ."""
 
     context = _request_context(request)
-    _enforce_record_abuse(availability.admit_collection_outer(context))
+    _enforce_record_abuse(
+        availability.admit_collection_outer(context), audit, database_session,
+        context.request_id,
+    )
     resolved = _resolve_session(request, settings, sessions)
     _enforce_record_abuse(
-        availability.admit_collection_session(resolved.session_id)
+        availability.admit_collection_session(resolved.session_id), audit,
+        database_session, context.request_id, resolved.principal.user_id,
     )
     decision, leases = availability.acquire_record_work(
         resolved.session_id, collection=True
     )
-    _enforce_record_abuse(decision)
+    _enforce_record_abuse(
+        decision, audit, database_session, context.request_id,
+        resolved.principal.user_id,
+    )
     if leases is None:
         raise RuntimeError("allowed collection work lacked leases")
     try:
@@ -99,6 +122,18 @@ def list_intelligence_records(
             detail="Authentication required",
         )
     if result.outcome is IntelligenceRecordCollectionReadOutcome.UNAVAILABLE:
+        _commit_record_event(
+            audit,
+            database_session,
+            SecurityEventDraft(
+                event_code=SecurityEventCode.AUTHORIZATION_ERROR,
+                actor_type=SecurityActorType.USER,
+                actor_user_id=resolved.principal.user_id,
+                request_id=context.request_id,
+                target_type=SecurityTargetType.SECURITY_SUBSYSTEM,
+                reason_code=SecurityEventReason.POLICY_EVALUATION_ERROR,
+            ),
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=_RECORD_SERVICE_UNAVAILABLE,
@@ -111,6 +146,27 @@ def list_intelligence_records(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=_RECORD_SERVICE_UNAVAILABLE,
         )
+    try:
+        audit.stage(
+            SecurityEventDraft(
+                event_code=SecurityEventCode.RESOURCE_COLLECTION_READ,
+                actor_type=SecurityActorType.USER,
+                actor_user_id=resolved.principal.user_id,
+                request_id=context.request_id,
+                target_type=SecurityTargetType.ENDPOINT,
+            )
+        )
+        database_session.commit()
+    except Exception:
+        database_session.rollback()
+        _LOGGER.error(
+            "mandatory record audit persistence failed request_id=%s subsystem=audit",
+            context.request_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_RECORD_SERVICE_UNAVAILABLE,
+        ) from None
     return [
         IntelligenceRecordCollectionEntryResponse(
             record_code=entry.record_code,
@@ -134,17 +190,28 @@ def read_intelligence_record(
         IntelligenceRecordReadService,
         Depends(get_intelligence_record_read_service),
     ],
+    audit: Annotated[AuditService, Depends(get_audit_service)],
+    database_session: Annotated[Session, Depends(get_db_session)],
 ) -> IntelligenceRecordResponse:
     """Return one record only after current centralized authorization allows it."""
 
     context = _request_context(request)
-    _enforce_record_abuse(availability.admit_detail_outer(context))
+    _enforce_record_abuse(
+        availability.admit_detail_outer(context), audit, database_session,
+        context.request_id,
+    )
     resolved = _resolve_session(request, settings, sessions)
-    _enforce_record_abuse(availability.admit_detail_session(resolved.session_id))
+    _enforce_record_abuse(
+        availability.admit_detail_session(resolved.session_id), audit,
+        database_session, context.request_id, resolved.principal.user_id,
+    )
     decision, leases = availability.acquire_record_work(
         resolved.session_id, collection=False
     )
-    _enforce_record_abuse(decision)
+    _enforce_record_abuse(
+        decision, audit, database_session, context.request_id,
+        resolved.principal.user_id,
+    )
     if leases is None:
         raise RuntimeError("allowed detail work lacked leases")
     try:
@@ -166,11 +233,46 @@ def read_intelligence_record(
             detail="Authentication required",
         )
     if result.outcome is IntelligenceRecordReadOutcome.INACCESSIBLE:
+        _commit_record_event(
+            audit, database_session,
+            SecurityEventDraft(
+                event_code=SecurityEventCode.AUTHORIZATION_DENIED,
+                actor_type=SecurityActorType.USER,
+                actor_user_id=resolved.principal.user_id,
+                request_id=context.request_id,
+                target_type=SecurityTargetType.INTELLIGENCE_RECORD,
+                reason_code=SecurityEventReason.POLICY_DENIED,
+            ),
+            SecurityEventDraft(
+                event_code=SecurityEventCode.RESOURCE_READ_INACCESSIBLE,
+                actor_type=SecurityActorType.USER,
+                actor_user_id=resolved.principal.user_id,
+                request_id=context.request_id,
+                target_type=SecurityTargetType.INTELLIGENCE_RECORD,
+                reason_code=SecurityEventReason.RESOURCE_INACCESSIBLE,
+            ),
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=_RECORD_NOT_FOUND,
         )
     if result.outcome is IntelligenceRecordReadOutcome.UNAVAILABLE:
+        _commit_record_event(
+            audit, database_session,
+            SecurityEventDraft(
+                event_code=SecurityEventCode.AUTHORIZATION_ERROR,
+                actor_type=SecurityActorType.USER,
+                actor_user_id=resolved.principal.user_id,
+                request_id=context.request_id,
+                target_type=SecurityTargetType.SECURITY_SUBSYSTEM,
+                reason_code=(
+                    SecurityEventReason.DATABASE_ERROR
+                    if result.failure_reason is not None
+                    and result.failure_reason.value.endswith("LOAD_ERROR")
+                    else SecurityEventReason.POLICY_EVALUATION_ERROR
+                ),
+            ),
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=_RECORD_SERVICE_UNAVAILABLE,
@@ -183,6 +285,30 @@ def read_intelligence_record(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=_RECORD_SERVICE_UNAVAILABLE,
         )
+    if not isinstance(result.record_id, uuid.UUID):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_RECORD_SERVICE_UNAVAILABLE,
+        )
+    _commit_record_event(
+        audit, database_session,
+        SecurityEventDraft(
+            event_code=SecurityEventCode.AUTHORIZATION_ALLOWED,
+            actor_type=SecurityActorType.USER,
+            actor_user_id=resolved.principal.user_id,
+            request_id=context.request_id,
+            target_type=SecurityTargetType.INTELLIGENCE_RECORD,
+            target_id=result.record_id,
+        ),
+        SecurityEventDraft(
+            event_code=SecurityEventCode.RESOURCE_READ_SUCCEEDED,
+            actor_type=SecurityActorType.USER,
+            actor_user_id=resolved.principal.user_id,
+            request_id=context.request_id,
+            target_type=SecurityTargetType.INTELLIGENCE_RECORD,
+            target_id=result.record_id,
+        ),
+    )
     return IntelligenceRecordResponse(
         record_code=result.record.record_code,
         title=result.record.title,
@@ -219,9 +345,38 @@ def _resolve_session(
     return resolved
 
 
-def _enforce_record_abuse(decision: AbuseDecision) -> None:
+def _enforce_record_abuse(
+    decision: AbuseDecision,
+    audit: AuditService,
+    database_session: Session,
+    request_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None = None,
+) -> None:
     if decision.status is AbuseDecisionStatus.ALLOW:
         return
+    reason = SecurityEventReason(decision.reason.value)
+    code = (
+        SecurityEventCode.CONCURRENCY_SATURATED
+        if decision.reason is AbuseDecisionReason.CONCURRENCY
+        else SecurityEventCode.ABUSE_STORE_UNAVAILABLE
+        if decision.status is AbuseDecisionStatus.UNAVAILABLE
+        else SecurityEventCode.ABUSE_ADMISSION_DENIED
+    )
+    _commit_record_event(
+        audit, database_session,
+        SecurityEventDraft(
+            event_code=code,
+            actor_type=(
+                SecurityActorType.USER
+                if actor_user_id is not None
+                else SecurityActorType.ANONYMOUS
+            ),
+            actor_user_id=actor_user_id,
+            request_id=request_id,
+            target_type=SecurityTargetType.ENDPOINT,
+            reason_code=reason,
+        ),
+    )
     if decision.status is AbuseDecisionStatus.LIMITED:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -236,3 +391,24 @@ def _enforce_record_abuse(decision: AbuseDecision) -> None:
         detail=_RECORD_SERVICE_UNAVAILABLE,
         headers={"Cache-Control": "no-store"},
     )
+
+
+def _commit_record_event(
+    audit: AuditService,
+    database_session: Session,
+    *drafts: SecurityEventDraft,
+) -> None:
+    try:
+        for draft in drafts:
+            audit.stage(draft)
+        database_session.commit()
+    except Exception:
+        database_session.rollback()
+        _LOGGER.error(
+            "mandatory record audit persistence failed request_id=%s subsystem=audit",
+            drafts[0].request_id if drafts else None,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_RECORD_SERVICE_UNAVAILABLE,
+        ) from None

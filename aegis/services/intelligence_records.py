@@ -353,6 +353,8 @@ class IntelligenceRecordReadResult:
 
     outcome: IntelligenceRecordReadOutcome
     record: AuthorizedIntelligenceRecord | None = None
+    record_id: uuid.UUID | None = None
+    failure_reason: AuthorizationDenyReason | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.outcome, IntelligenceRecordReadOutcome):
@@ -361,12 +363,14 @@ class IntelligenceRecordReadResult:
             isinstance(self.record, AuthorizedIntelligenceRecord)
         ):
             raise ValueError("only an authorized read may contain a record")
+        if self.outcome is not IntelligenceRecordReadOutcome.AUTHORIZED and self.record_id is not None:
+            raise ValueError("inaccessible reads cannot disclose a record ID")
 
     @classmethod
     def authorized(
-        cls, record: AuthorizedIntelligenceRecord
+        cls, record: AuthorizedIntelligenceRecord, record_id: uuid.UUID | None = None
     ) -> IntelligenceRecordReadResult:
-        return cls(IntelligenceRecordReadOutcome.AUTHORIZED, record)
+        return cls(IntelligenceRecordReadOutcome.AUTHORIZED, record, record_id)
 
     @classmethod
     def inaccessible(cls) -> IntelligenceRecordReadResult:
@@ -377,8 +381,11 @@ class IntelligenceRecordReadResult:
         return cls(IntelligenceRecordReadOutcome.AUTHENTICATION_REQUIRED)
 
     @classmethod
-    def unavailable(cls) -> IntelligenceRecordReadResult:
-        return cls(IntelligenceRecordReadOutcome.UNAVAILABLE)
+    def unavailable(
+        cls,
+        reason: AuthorizationDenyReason = AuthorizationDenyReason.POLICY_EVALUATION_ERROR,
+    ) -> IntelligenceRecordReadResult:
+        return cls(IntelligenceRecordReadOutcome.UNAVAILABLE, failure_reason=reason)
 
 
 class IntelligenceRecordReadService:
@@ -410,7 +417,9 @@ class IntelligenceRecordReadService:
                 subject_result.failure_reason
                 is AuthorizationDenyReason.SUBJECT_LOAD_ERROR
             ):
-                return IntelligenceRecordReadResult.unavailable()
+                return IntelligenceRecordReadResult.unavailable(
+                    AuthorizationDenyReason.SUBJECT_LOAD_ERROR
+                )
             if subject_result.subject is None:
                 return IntelligenceRecordReadResult.authentication_required()
             subject = subject_result.subject
@@ -422,7 +431,9 @@ class IntelligenceRecordReadService:
                 policy_result.failure_reason
                 is AuthorizationDenyReason.RESOURCE_LOAD_ERROR
             ):
-                return IntelligenceRecordReadResult.unavailable()
+                return IntelligenceRecordReadResult.unavailable(
+                    AuthorizationDenyReason.RESOURCE_LOAD_ERROR
+                )
             if policy_result.policy is None or policy_result.record_id is None:
                 return IntelligenceRecordReadResult.inaccessible()
 
@@ -438,7 +449,9 @@ class IntelligenceRecordReadService:
                     decision.deny_reason
                     is AuthorizationDenyReason.POLICY_EVALUATION_ERROR
                 ):
-                    return IntelligenceRecordReadResult.unavailable()
+                    return IntelligenceRecordReadResult.unavailable(
+                        AuthorizationDenyReason.POLICY_EVALUATION_ERROR
+                    )
                 return IntelligenceRecordReadResult.inaccessible()
 
             loaded = self._content.get_content_record_by_id(policy_result.record_id)
@@ -450,7 +463,9 @@ class IntelligenceRecordReadService:
                 record_code,
                 policy_result.policy,
             )
-            return IntelligenceRecordReadResult.authorized(authorized)
+            return IntelligenceRecordReadResult.authorized(
+                authorized, policy_result.record_id
+            )
         except Exception:
             return IntelligenceRecordReadResult.unavailable()
 

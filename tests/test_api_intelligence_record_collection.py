@@ -9,9 +9,11 @@ import uuid
 
 from fastapi.testclient import TestClient
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from aegis.api.dependencies import (
+    get_audit_service,
     get_db_session,
     get_intelligence_record_collection_read_service,
     get_session_service,
@@ -25,6 +27,7 @@ from aegis.db.intelligence_record_repositories import (
     RecordReferencePolicyFacts,
 )
 from aegis.db.models import (
+    AuditEvent,
     ClearanceLevel,
     Compartment,
     Department,
@@ -76,6 +79,11 @@ AUDITOR_ID = uuid.UUID("30000000-0000-0000-0000-000000000004")
 ADMIN_ID = uuid.UUID("30000000-0000-0000-0000-000000000005")
 NIGHTFALL_ID = uuid.UUID("33000000-0000-0000-0000-000000000001")
 GENERIC_UNAVAILABLE = {"detail": "Classified record service unavailable"}
+
+
+class FailingAudit:
+    def stage(self, _draft):
+        raise RuntimeError("synthetic mandatory audit failure")
 
 
 def settings() -> Settings:
@@ -272,6 +280,27 @@ def test_mixed_direct_api_collection_returns_only_authorized_metadata(
     assert "content" not in response.text.lower()
     for hidden_code in ("INT-00002", "INT-00003", "INT-00005", "INT-00006"):
         assert hidden_code not in response.text
+    events = tuple(db_session.scalars(select(AuditEvent)))
+    assert len(events) == 1
+    assert events[0].event_code == "RESOURCE_COLLECTION_READ"
+    assert events[0].target_type == "ENDPOINT"
+    assert events[0].target_id is None
+
+
+def test_collection_audit_failure_returns_generic_503_without_metadata(
+    db_session: Session,
+) -> None:
+    application, configured, references, user, token = prepare_collection(db_session)
+    persist_record(db_session, references, user, "INT-00001")
+    db_session.commit()
+    application.dependency_overrides[get_audit_service] = lambda: FailingAudit()
+
+    response = request_collection(application, configured, token)
+
+    assert response.status_code == 503
+    assert response.json() == GENERIC_UNAVAILABLE
+    assert "Title INT-00001" not in response.text
+    assert db_session.scalar(select(AuditEvent)) is None
 
 
 def test_authorized_collection_is_sorted_after_authorization(

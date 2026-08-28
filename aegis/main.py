@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from aegis.api.routes.authentication import router as authentication_router
+from aegis.api.routes.audit import router as audit_router
 from aegis.api.routes.intelligence_records import (
     router as intelligence_records_router,
 )
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
         return await call_next(request)
     application.include_router(system_router)
     application.include_router(authentication_router)
+    application.include_router(audit_router)
     application.include_router(intelligence_records_router)
     application.include_router(ui_router)
     application.mount(

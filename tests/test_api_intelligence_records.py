@@ -8,9 +8,11 @@ import uuid
 
 from fastapi.testclient import TestClient
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from aegis.api.dependencies import (
+    get_audit_service,
     get_db_session,
     get_intelligence_record_read_service,
     get_session_service,
@@ -18,6 +20,7 @@ from aegis.api.dependencies import (
 from aegis.core.config import Settings, get_settings
 from aegis.db.intelligence_record_repositories import IntelligenceRecordContent
 from aegis.db.models import (
+    AuditEvent,
     ClearanceLevel,
     Compartment,
     Department,
@@ -64,6 +67,11 @@ ADMIN_ID = uuid.UUID("30000000-0000-0000-0000-000000000005")
 NIGHTFALL_ID = uuid.UUID("33000000-0000-0000-0000-000000000001")
 GENERIC_NOT_FOUND = {"detail": "Record not found"}
 GENERIC_UNAVAILABLE = {"detail": "Classified record service unavailable"}
+
+
+class FailingAudit:
+    def stage(self, _draft):
+        raise RuntimeError("synthetic mandatory audit failure")
 
 
 def settings() -> Settings:
@@ -280,6 +288,27 @@ def test_authorized_direct_api_read_returns_only_approved_fields(
         "content",
         "classification",
     }
+    events = tuple(db_session.scalars(select(AuditEvent).order_by(AuditEvent.occurred_at)))
+    assert [event.event_code for event in events] == [
+        "AUTHORIZATION_ALLOWED",
+        "RESOURCE_READ_SUCCEEDED",
+    ]
+    assert events[0].target_id == events[1].target_id
+    assert events[0].request_id == events[1].request_id
+
+
+def test_mandatory_audit_failure_returns_no_classified_content(
+    db_session: Session,
+) -> None:
+    application, configured, _, _, _, token = get_record(db_session)
+    application.dependency_overrides[get_audit_service] = lambda: FailingAudit()
+
+    response = request_record(application, configured, token, "INT-00001")
+
+    assert response.status_code == 503
+    assert response.json() == GENERIC_UNAVAILABLE
+    assert "Synthetic classified-record content" not in response.text
+    assert db_session.scalar(select(AuditEvent)) is None
 
 
 @pytest.mark.parametrize(
@@ -330,6 +359,16 @@ def test_unknown_and_malformed_codes_share_hidden_response_without_422(
     application, configured, _, _, _, token = get_record(db_session)
 
     assert_hidden(request_record(application, configured, token, code))
+    events = tuple(db_session.scalars(select(AuditEvent)))
+    assert {event.event_code for event in events} == {
+        "AUTHORIZATION_DENIED",
+        "RESOURCE_READ_INACCESSIBLE",
+    }
+    assert all(event.target_id is None for event in events)
+    assert all(
+        code not in tuple(str(value) for value in vars(event).values())
+        for event in events
+    )
 
 
 @pytest.mark.parametrize(

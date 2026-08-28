@@ -20,6 +20,8 @@ from aegis.core.config import Settings, get_settings
 from aegis.main import create_app
 from aegis.security.abuse import (
     AbuseControlEngine,
+    AbuseDecision,
+    AbuseDecisionReason,
     AbuseDecisionStatus,
     AbuseStoreUnavailable,
     ConcurrencyPolicy,
@@ -27,6 +29,7 @@ from aegis.security.abuse import (
     CounterPolicy,
     InMemoryAbuseStateStore,
 )
+from aegis.api.routes.intelligence_records import _enforce_record_abuse
 from aegis.security.authentication_events import AuthenticationRequestContext
 from aegis.security.availability_abuse import (
     AvailabilityAbuseControl,
@@ -124,6 +127,14 @@ class Challenges:
 class Audit:
     def stage(self, _draft):
         return None
+
+
+class RecordingAudit:
+    def __init__(self) -> None:
+        self.drafts = []
+
+    def stage(self, draft):
+        self.drafts.append(draft)
 
 
 class CollectionService:
@@ -224,6 +235,38 @@ def test_auth_me_limits_before_resolution_and_does_not_mutate_cookie() -> None:
     assert limited.headers["retry-after"] == "60"
     assert "set-cookie" not in limited.headers
     assert client.cookies.get(configured.session_cookie_name) == token
+
+
+@pytest.mark.parametrize(
+    ("decision", "status_code", "event_code"),
+    [
+        (AbuseDecision.limited(AbuseDecisionReason.RATE_LIMIT, 10), 429, "ABUSE_ADMISSION_DENIED"),
+        (AbuseDecision.limited(AbuseDecisionReason.CONCURRENCY, 10), 429, "CONCURRENCY_SATURATED"),
+        (AbuseDecision.unavailable(AbuseDecisionReason.STORE_CAPACITY), 503, "ABUSE_STORE_UNAVAILABLE"),
+        (AbuseDecision.unavailable(AbuseDecisionReason.STORE_UNAVAILABLE), 503, "ABUSE_STORE_UNAVAILABLE"),
+    ],
+)
+def test_record_abuse_evidence_is_controlled_and_secret_free(
+    decision, status_code: int, event_code: str
+) -> None:
+    audit = RecordingAudit()
+    transaction = DatabaseTransaction()
+    request_id = uuid.uuid4()
+
+    with pytest.raises(Exception) as raised:
+        _enforce_record_abuse(decision, audit, transaction, request_id)
+
+    assert raised.value.status_code == status_code
+    assert transaction.commits == 1
+    assert len(audit.drafts) == 1
+    draft = audit.drafts[0]
+    assert draft.event_code.value == event_code
+    assert draft.request_id == request_id
+    assert draft.target_id is None
+    representation = repr(draft)
+    assert "record_code" not in representation
+    assert "token" not in representation
+    assert "username" not in representation
 
 
 def test_random_session_tokens_allocate_no_semantic_state_before_resolution() -> None:
@@ -481,15 +524,16 @@ def test_logout_does_not_fail_open_for_programming_or_invalid_store_results(stor
             "/records/INT-99999",
             False,
             ResultService(
-                IntelligenceRecordReadResult.authorized(
-                    AuthorizedIntelligenceRecord(
+                    IntelligenceRecordReadResult.authorized(
+                        AuthorizedIntelligenceRecord(
                         record_code="INT-99999",
                         title="Synthetic Record",
                         summary=None,
                         content="Synthetic content",
-                        classification="CONFIDENTIAL",
+                            classification="CONFIDENTIAL",
+                        ),
+                        uuid.uuid4(),
                     )
-                )
             ),
             200,
         ),

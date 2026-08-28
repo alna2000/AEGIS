@@ -1364,3 +1364,39 @@ Only controlled values, internal UUIDs, and request IDs cross the durable audit
 boundary. Raw credentials, TOTP material, tokens, cookies, usernames, IP/user
 agent, request bodies, and classified content do not. Generic HTTP errors,
 cookie timing, and controlled logout recovery behavior remain unchanged.
+
+## Phase 6 Part 3 authorization, access, abuse, and audit queries
+
+A successful classified detail request authorizes and loads the approved
+representation, stages `AUTHORIZATION_ALLOWED` and `RESOURCE_READ_SUCCEEDED`
+against the server-resolved internal UUID, commits mandatory evidence, and only
+then returns content. Audit failure produces a generic 503 and no content.
+Ordinary deny, missing, malformed, draft, retired, and invalid-policy candidates
+retain the same hidden 404 and produce generic `AUTHORIZATION_DENIED` plus
+`RESOURCE_READ_INACCESSIBLE` evidence without record UUID or record code.
+Infrastructure and evaluator failures remain generic 503 with controlled
+`AUTHORIZATION_ERROR` evidence where persistence is available.
+
+Collection authorization remains bounded at 100 candidates and continues to
+require SEARCH and READ per candidate before metadata loading. It emits one
+`RESOURCE_COLLECTION_READ` event after successful completion, including empty
+results, and stores no candidate/returned counts or candidate identities. No
+per-candidate durable authorization rows are created.
+
+Record-route non-allow abuse outcomes are persisted using controlled endpoint
+category, actor/request UUID where known, and controlled reason only. Limiter
+keys, source IP, username correlation, session material, and record code never
+cross the audit boundary. Public availability stays lightweight and `/health`
+uses neither database, audit persistence, nor abuse state.
+
+Audit reads use a separate repository with no mutation methods. The backend
+reloads the current subject and calls the central evaluator with `AUDIT` and a
+content-free `AUDIT_EVENT` policy. System Administrator has no implicit access.
+The initial query defaults to the latest 24 hours, caps ranges at 31 days and
+pages at 100, orders by `(occurred_at DESC, id DESC)`, and uses a strictly
+validated opaque cursor. Filters are exact controlled event/outcome/severity,
+actor UUID, target type/UUID, request UUID, and time range. The projection omits
+source correlation and key ID, usernames, IP/user agent, arbitrary metadata,
+policy attributes, exception text, and classified data. No total count is
+returned. Query self-auditing is deferred to avoid an unreviewed recursive write
+boundary.
