@@ -125,3 +125,8 @@
 | Authorize audit queries through central `AUDIT` on a content-free `AUDIT_EVENT` policy. | Security Auditor receives the existing explicit capability while System Administrator and other roles gain no implicit access or endpoint-specific bypass. |
 | Separate bounded audit queries from the append-only writer. | Stable cursor pagination and exact controlled filters do not broaden the writer into CRUD or expose update/delete operations. |
 | Defer audit-query self-auditing and source correlation. | `AUDIT_QUERY_EXECUTED` is not approved and recursive write/query behavior plus separately keyed correlation require later focused review. |
+| Derive Part 4A findings in memory from durable audit events without a findings table. | Current deterministic visibility needs no second evidence store, lifecycle, migration, or synchronization semantics. |
+| Bound detection to 24 hours, 5,000 source rows, 25 supporting IDs per finding, and 500 findings. | Detection cannot become an unlimited historical scan or attacker-driven projection; source overflow fails closed rather than producing incomplete conclusions. |
+| Group only by persisted internal identity and leave anonymous password failures ungrouped. | AEGIS has intentionally stored no plaintext username, raw IP, or source correlation, so inventing identity grouping would overstate available evidence. |
+| Allow actorless limiter events to form only aggregate abuse-pressure findings. | System pressure is meaningful without attributing it to an inferred user or exposing limiter keys. |
+| Keep detection visibility-only with no enforcement surface. | Findings are evidence for human review, not proof of malicious behavior or authority to revoke, disable, lock, or change policy. |

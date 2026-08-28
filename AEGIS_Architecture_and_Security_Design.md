@@ -1400,3 +1400,36 @@ source correlation and key ID, usernames, IP/user agent, arbitrary metadata,
 policy attributes, exception text, and classified data. No total count is
 returned. Query self-auditing is deferred to avoid an unreviewed recursive write
 boundary.
+
+## Phase 6 Part 4A deterministic detection engine
+
+Detection is a read-only derived view over durable audit evidence. A dedicated
+repository selects only event UUID, UTC occurrence time, controlled event code,
+and nullable internal actor/subject/target UUIDs. It has no update, delete,
+commit, enforcement, or general CRUD boundary. No findings table or migration is
+introduced.
+
+Each run requires an aware UTC clock and a positive lookback no greater than 24
+hours. The repository reads relevant rows in stable `(occurred_at ASC, id ASC)`
+order with a hard 5,000-row completeness bound; a 5,001st row makes detection
+fail closed instead of returning misleading partial findings. Each immutable
+finding carries a controlled finding code and severity, window start/end,
+optional safe internal identity, event count, and at most 25 supporting event
+UUIDs. Output is capped at 500 findings and sorted deterministically by severity,
+recent window end, code, and identity.
+
+Threshold rules are: five known-subject password failures in ten minutes; three
+same-actor MFA failures in five minutes; any MFA challenge exhaustion; 25
+same-actor authorization denials in five minutes; any authorization system
+error; ten same-actor inaccessible reads in ten minutes; five abuse admission or
+concurrency events in five minutes; any abuse-store failure; and any durable
+audit-system failure. Anonymous password events are deliberately ungrouped.
+Actorless abuse events may form only aggregate system-pressure findings. No
+source correlation or inferred hidden target is used.
+
+Detection is visibility only and cannot revoke sessions, disable users, change
+authorization or abuse state, or modify records. The audit-system-failure rule
+detects only evidence that was durably recorded; database outages that prevent
+their own audit write remain best-effort operational diagnostics. API/UI,
+persistent findings, exercise execution, SIEM, and automatic enforcement remain
+outside Part 4A.

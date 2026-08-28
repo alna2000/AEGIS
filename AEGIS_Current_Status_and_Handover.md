@@ -642,3 +642,26 @@ stable descending cursor pagination, and expose a fixed projection without
 source correlation, usernames, network/client data, metadata, policy facts, or
 classified content. Audit-query self-auditing, source-correlation generation,
 detections, SIEM, UI expansion, and Phase 7 remain deferred.
+
+## Phase 6 Part 4A local implementation status
+
+Phase 6 remains **IN PROGRESS**. Parts 1 through 3 are complete and
+checkpointed. Part 4 is in progress; the Part 4A deterministic detection engine
+is implemented locally and pending review. No migration or findings table was
+added.
+
+The engine derives immutable bounded findings from existing `audit_events` for
+repeated password failure, MFA failure/exhaustion, authorization denial/error,
+inaccessible-resource probing, abuse pressure/store failure, and audit-system
+failure. It scans at most 24 hours and 5,000 relevant rows, fails closed on
+source overflow, retains at most 25 supporting event UUIDs per finding, and
+returns at most 500 findings in deterministic severity/time/code order.
+
+Findings contain only controlled code/severity, UTC window, optional internal
+user UUID, count, and bounded supporting event UUIDs. They contain no source
+correlation, username, IP, token, policy attributes, classified content, or
+free-form metadata and have no enforcement behavior. Anonymous password events
+are not grouped without a safe identity; actorless abuse events contribute only
+to aggregate system pressure. Part 4B, the local security exercise, detection
+API/UI, persistent findings, audit-query self-auditing, SIEM, and Phase 7 remain
+deferred.
