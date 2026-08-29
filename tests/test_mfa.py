@@ -144,7 +144,7 @@ def test_missing_or_invalid_key_configuration_fails_safely(key: str | None) -> N
 
 
 def test_settings_keep_mfa_key_optional_and_secret_represented_until_use() -> None:
-    settings = Settings(_env_file=None)
+    settings = Settings(mfa_encryption_key=None, _env_file=None)
     with pytest.raises(MfaKeyConfigurationError):
         MfaSecretCipher(
             settings.mfa_encryption_key,

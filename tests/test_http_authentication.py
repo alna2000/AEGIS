@@ -152,6 +152,7 @@ def configure_app(
         environment="test",
         database_url="sqlite+pysqlite:///:memory:",
         session_cookie_secure=False,
+        mfa_encryption_key=None,
         _env_file=None,
     )
     sink = audit_sink or RecordingAuditSink()
